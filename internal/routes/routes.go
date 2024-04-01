@@ -6,28 +6,60 @@ import (
 	"github.com/bingKegeta/Knight-Link/internal/handlers"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
+	"github.com/go-chi/render"
 )
 
-func LoadRoutes() *chi.Mux {
+func Routes() *chi.Mux {
 	router := chi.NewRouter()
+	router.Use(
+		render.SetContentType(render.ContentTypeJSON),
+		middleware.Logger,
+		middleware.RedirectSlashes,
+		middleware.Recoverer,
+	)
 
-	router.Use(middleware.Logger)
-
-	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
+	router.Route("/v1", func(r chi.Router) {
+		r.Mount("/api/users", UserRoutes())
+		r.Mount("/api/auth", AuthRoutes())
+		r.Mount("/api/events", EventRoutes())
+		r.Mount("/api/rsos", RSORoutes())
 	})
-
-	router.Route("/orders", LoadOrderRoutes)
 
 	return router
 }
 
-func LoadOrderRoutes(router chi.Router) {
-	orderHandler := &handlers.Order{}
+func UserRoutes() http.Handler {
+	router := chi.NewRouter()
+	router.Get("/{userId}", handlers.GetUser)
+	router.Delete("/{userId}", handlers.DeleteUser)
+	router.Put("/{userId}", handlers.UpdateUser)
+	router.Post("/", handlers.CreateUser)
+	return router
+}
 
-	router.Post("/", orderHandler.Create)
-	router.Get("/", orderHandler.List)
-	router.Get("/{id}", orderHandler.GetByID)
-	router.Put("/{id}", orderHandler.UpdateByID)
-	router.Delete("/id", orderHandler.DeleteByID)
+func AuthRoutes() http.Handler {
+	router := chi.NewRouter()
+	router.Post("/login", handlers.Login)
+	router.Post("/logout", handlers.Logout)
+	return router
+}
+
+func EventRoutes() http.Handler {
+	router := chi.NewRouter()
+	router.Get("/", handlers.GetAllEvents)
+	router.Get("/{eventId}", handlers.GetEvent)
+	router.Delete("/{eventId}", handlers.DeleteEvent)
+	router.Put("/{eventId}", handlers.UpdateEvent)
+	router.Post("/", handlers.CreateEvent)
+	return router
+}
+
+func RSORoutes() http.Handler {
+	router := chi.NewRouter()
+	router.Get("/", handlers.GetAllRSOs)
+	router.Get("/{rsoId}", handlers.GetRSO)
+	router.Delete("/{rsoId}", handlers.DeleteRSO)
+	router.Put("/{rsoId}", handlers.UpdateRSO)
+	router.Post("/", handlers.CreateRSO)
+	return router
 }
