@@ -83,6 +83,8 @@ func GetUser(w http.ResponseWriter, r *http.Request) {
 		render.PlainText(w, r, "JSON creation screwed up")
 	}
 	response := string(jsonData)
+
+	render.Status(r, http.StatusFound)
 	render.JSON(w, r, response)
 }
 
@@ -97,7 +99,7 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func CreateUser(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement the logic to create a user
+
 	render.JSON(w, r, "CreateUser endpoint")
 }
 
