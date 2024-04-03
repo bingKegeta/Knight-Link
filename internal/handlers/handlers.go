@@ -121,7 +121,12 @@ func GetUser(w http.ResponseWriter, r *http.Request) {
 
 	var user User
 	rows.Next()
-	rows.Scan(&user.User_id, &user.Fname, &user.Lname, &user.Email, &user.Authority, &user.RSO_affiliation)
+	err = rows.Scan(&user.User_id, &user.Fname, &user.Lname, &user.Email, &user.Authority, &user.RSO_affiliation)
+	if err != nil {
+		render.Status(r, http.StatusNotFound)
+		render.PlainText(w, r, err.Error())
+		return
+	}
 
 	render.Status(r, http.StatusFound)
 	render.JSON(w, r, user)
