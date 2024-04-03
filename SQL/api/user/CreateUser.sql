@@ -6,4 +6,4 @@ INSERT INTO Users (
         auth,
         is_affiliated_with_rso
     )
-VALUES (%s, %s, %s, %s, %s, %s);
+VALUES ('%s', '%s', '%s', '%s', '%s', %v);
