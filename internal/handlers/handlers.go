@@ -1,28 +1,89 @@
 package handlers
 
 import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
+	"os"
 
+	"github.com/go-chi/chi"
 	"github.com/go-chi/render"
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 )
 
 // * Probably need to add more structs to make the JSONs easier to make(?)
 type User struct {
-	UID         int    `json:"uid"`
-	Name        string `json:"name"`
-	Email       string `json:"email"`
-	Login       string `json:"login"`
-	Password    string `json:"password"`
-	DateCreated string `json:"dateCreated"`
-	Desc        string `json:"desc"`
-	Authority   string `json:"authority"`
+	User_id         int    `json:"user_id"`
+	Fname           string `json:"first_name"`
+	Lname           string `json:"last_name"`
+	Email           string `json:"email"`
+	Password        string `json:"password"`
+	Authority       string `json:"auth"`
+	RSO_affiliation bool   `json:"is_affiliated_with_rso"`
+}
+
+// Function to establish a connection to the database
+func connectToDB() (*sql.DB, error) {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+		return nil, err
+	}
+
+	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
+		"localhost", 5432, os.Getenv("PG_USER"), os.Getenv("PG_PW"), os.Getenv("PG_DB"))
+
+	db, err := sql.Open("postgres", psqlInfo)
+	if err != nil {
+		return nil, err
+	}
+
+	return db, nil
 }
 
 //! Remember to set the status codes
 
 func GetUser(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement the logic to get a user
-	render.JSON(w, r, "GetUser endpoint")
+	db, err := connectToDB()
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.PlainText(w, r, "500 Internal Server Error")
+		return
+	}
+	defer db.Close()
+
+	user_id := chi.URLParam(r, "userId")
+	query, err := os.ReadFile("./SQL/api/user/GetById.sql")
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.PlainText(w, r, "500 Error Getting the Query")
+		return
+	}
+
+	q := string(query)
+	query_string := fmt.Sprintf(q, user_id)
+
+	rows, err := db.Query(query_string)
+	if err != nil {
+		render.Status(r, http.StatusNotFound)
+		render.PlainText(w, r, "404 Entry Not Found")
+		return
+	}
+	defer rows.Close()
+
+	var user User
+	rows.Next()
+	rows.Scan(&user.User_id, &user.Fname, &user.Lname, &user.Email, &user.Password, &user.Authority, &user.RSO_affiliation)
+
+	jsonData, err := json.Marshal(user)
+	if err != nil {
+		render.PlainText(w, r, "JSON creation screwed up")
+	}
+	response := string(jsonData)
+	render.JSON(w, r, response)
 }
 
 func DeleteUser(w http.ResponseWriter, r *http.Request) {
