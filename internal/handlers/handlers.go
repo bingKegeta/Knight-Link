@@ -2,10 +2,12 @@ package handlers
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"reflect"
 
 	"github.com/go-chi/chi"
 	"github.com/go-chi/render"
@@ -22,6 +24,20 @@ type User struct {
 	Password        string `json:"password"`
 	Authority       string `json:"auth"`
 	RSO_affiliation bool   `json:"is_affiliated_with_rso"`
+}
+
+type UserNoId struct {
+	Fname           string `json:"first_name"`
+	Lname           string `json:"last_name"`
+	Email           string `json:"email"`
+	Password        string `json:"password"`
+	Authority       string `json:"auth"`
+	RSO_affiliation bool   `json:"is_affiliated_with_rso"`
+}
+
+type SQLParseToType struct {
+	query        string
+	CustomStruct interface{}
 }
 
 // Function to establish a connection to the database
@@ -43,6 +59,32 @@ func connectToDB() (*sql.DB, error) {
 	return db, nil
 }
 
+// Function to parse SQL script into string
+func parseSQL(fp string, class interface{}) (string, error) {
+	query, err := os.ReadFile(fp)
+	if err != nil {
+		return "", err
+	}
+
+	q := string(query)
+
+	var result = SQLParseToType{query: q, CustomStruct: class}
+
+	valueOfStruct := reflect.ValueOf(result.CustomStruct)
+	var values []interface{}
+
+	for i := 0; i < valueOfStruct.NumField(); i++ {
+		fieldValue := valueOfStruct.Field(i)
+
+		values = append(values, fieldValue.Interface())
+	}
+
+	query_string := fmt.Sprintf(result.query, values...)
+
+	return query_string, nil
+
+}
+
 //! Remember to set the status codes
 
 func GetUser(w http.ResponseWriter, r *http.Request) {
@@ -55,15 +97,19 @@ func GetUser(w http.ResponseWriter, r *http.Request) {
 	defer db.Close()
 
 	user_id := chi.URLParam(r, "userId")
-	query, err := os.ReadFile("./SQL/api/user/GetById.sql")
-	if err != nil {
-		render.Status(r, http.StatusInternalServerError)
-		render.PlainText(w, r, "500 Error Getting the Query")
-		return
+
+	uid := struct {
+		User_id string `json:"user_id"`
+	}{
+		User_id: user_id,
 	}
 
-	q := string(query)
-	query_string := fmt.Sprintf(q, user_id)
+	query_string, err := parseSQL("./SQL/api/user/GetById.sql", uid)
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.PlainText(w, r, "500 Query making screwed up")
+		return
+	}
 
 	rows, err := db.Query(query_string)
 	if err != nil {
@@ -92,8 +138,37 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func CreateUser(w http.ResponseWriter, r *http.Request) {
+	db, err := connectToDB()
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.PlainText(w, r, "500 Internal Server Error")
+		return
+	}
+	defer db.Close()
 
-	render.JSON(w, r, "CreateUser endpoint")
+	var user UserNoId
+	err = json.NewDecoder(r.Body).Decode(&user)
+	if err != nil {
+		render.Status(r, http.StatusBadRequest)
+		render.PlainText(w, r, "400 Bad Request")
+		return
+	}
+
+	query, err := parseSQL("./SQL/api/user/CreateUser.sql", user)
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.PlainText(w, r, err.Error())
+		return
+	}
+
+	_, err = db.Exec(query)
+	if err != nil {
+		render.Status(r, http.StatusNotFound)
+		render.PlainText(w, r, err.Error())
+		return
+	}
+
+	render.JSON(w, r, "User Created")
 }
 
 func Login(w http.ResponseWriter, r *http.Request) {
