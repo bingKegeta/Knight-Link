@@ -16,6 +16,7 @@ func New() *App {
 	app := &App{
 		router: routes.Routes(),
 	}
+	println("Server started.")
 
 	return app
 }
