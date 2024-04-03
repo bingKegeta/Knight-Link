@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -78,14 +77,8 @@ func GetUser(w http.ResponseWriter, r *http.Request) {
 	rows.Next()
 	rows.Scan(&user.User_id, &user.Fname, &user.Lname, &user.Email, &user.Password, &user.Authority, &user.RSO_affiliation)
 
-	jsonData, err := json.Marshal(user)
-	if err != nil {
-		render.PlainText(w, r, "JSON creation screwed up")
-	}
-	response := string(jsonData)
-
 	render.Status(r, http.StatusFound)
-	render.JSON(w, r, response)
+	render.JSON(w, r, user)
 }
 
 func DeleteUser(w http.ResponseWriter, r *http.Request) {
