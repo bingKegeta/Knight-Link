@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/render"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // * Probably need to add more structs to make the JSONs easier to make(?)
@@ -21,7 +22,6 @@ type User struct {
 	Fname           string `json:"first_name"`
 	Lname           string `json:"last_name"`
 	Email           string `json:"email"`
-	Password        string `json:"password"`
 	Authority       string `json:"auth"`
 	RSO_affiliation bool   `json:"is_affiliated_with_rso"`
 }
@@ -91,7 +91,7 @@ func GetUser(w http.ResponseWriter, r *http.Request) {
 	db, err := connectToDB()
 	if err != nil {
 		render.Status(r, http.StatusInternalServerError)
-		render.PlainText(w, r, "500 Internal Server Error")
+		render.PlainText(w, r, err.Error())
 		return
 	}
 	defer db.Close()
@@ -107,21 +107,21 @@ func GetUser(w http.ResponseWriter, r *http.Request) {
 	query_string, err := parseSQL("./SQL/api/user/GetById.sql", uid)
 	if err != nil {
 		render.Status(r, http.StatusInternalServerError)
-		render.PlainText(w, r, "500 Query making screwed up")
+		render.PlainText(w, r, err.Error())
 		return
 	}
 
 	rows, err := db.Query(query_string)
 	if err != nil {
 		render.Status(r, http.StatusNotFound)
-		render.PlainText(w, r, "404 Entry Not Found")
+		render.PlainText(w, r, err.Error())
 		return
 	}
 	defer rows.Close()
 
 	var user User
 	rows.Next()
-	rows.Scan(&user.User_id, &user.Fname, &user.Lname, &user.Email, &user.Password, &user.Authority, &user.RSO_affiliation)
+	rows.Scan(&user.User_id, &user.Fname, &user.Lname, &user.Email, &user.Authority, &user.RSO_affiliation)
 
 	render.Status(r, http.StatusFound)
 	render.JSON(w, r, user)
@@ -141,7 +141,7 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 	db, err := connectToDB()
 	if err != nil {
 		render.Status(r, http.StatusInternalServerError)
-		render.PlainText(w, r, "500 Internal Server Error")
+		render.PlainText(w, r, err.Error())
 		return
 	}
 	defer db.Close()
@@ -150,9 +150,21 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 	err = json.NewDecoder(r.Body).Decode(&user)
 	if err != nil {
 		render.Status(r, http.StatusBadRequest)
-		render.PlainText(w, r, "400 Bad Request")
+		render.PlainText(w, r, err.Error())
 		return
 	}
+
+	// Hash the password using bcrypt
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
+	if err != nil {
+		// Handle error during hashing
+		render.Status(r, http.StatusInternalServerError)
+		render.PlainText(w, r, err.Error())
+		return
+	}
+
+	// Set the password to the newly hashed password
+	user.Password = string(hashedPassword)
 
 	query, err := parseSQL("./SQL/api/user/CreateUser.sql", user)
 	if err != nil {
