@@ -1,112 +1,319 @@
-CREATE TYPE user_type AS ENUM ('superadmin', 'admin', 'student');
-CREATE TYPE event_type AS ENUM ('public', 'private', 'rso_event');
-CREATE TABLE Universities (
-    university_id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL UNIQUE,
-    location VARCHAR(255) NOT NULL,
-    description TEXT,
-    number_of_students INTEGER,
-    picture BYTEA
+-- Database generated with pgModeler (PostgreSQL Database Modeler).
+-- pgModeler version: 1.1.1
+-- PostgreSQL version: 16.0
+-- Project Site: pgmodeler.io
+-- Model Author: ---
+-- Database creation must be performed outside a multi lined SQL file. 
+-- These commands were put in this file only as a convenience.
+-- 
+-- object: "Knight-Link" | type: DATABASE --
+-- DROP DATABASE IF EXISTS "Knight-Link";
+-- CREATE DATABASE "Knight-Link";
+-- ddl-end --
+SET check_function_bodies = false;
+-- ddl-end --
+-- object: public.auth | type: TYPE --
+-- DROP TYPE IF EXISTS public.auth CASCADE;
+CREATE TYPE public.auth AS ENUM ('student', 'admin', 'superadmin');
+-- ddl-end --
+-- object: public."Universities" | type: TABLE --
+-- DROP TABLE IF EXISTS public."Universities" CASCADE;
+CREATE TABLE public."Universities" (
+    uni_id serial NOT NULL,
+    name varchar(255) NOT NULL,
+    description text,
+    student_no integer,
+    picture bytea,
+    loc_id serial NOT NULL,
+    CONSTRAINT "Universities_pk" PRIMARY KEY (uni_id),
+    CONSTRAINT uni_ques UNIQUE (name, loc_id)
 );
-CREATE TABLE Locations (
-    location_id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    latitude DECIMAL(10, 8) NOT NULL,
-    longitude DECIMAL(10, 8) NOT NULL
+-- ddl-end --
+COMMENT ON COLUMN public."Universities".student_no IS E'Number of students in the university currently';
+-- ddl-end --
+-- object: public."Users" | type: TABLE --
+-- DROP TABLE IF EXISTS public."Users" CASCADE;
+CREATE TABLE public."Users" (
+    user_id serial NOT NULL,
+    first_name varchar(255),
+    last_name varchar(255),
+    username varchar(255) NOT NULL,
+    password varchar(255) NOT NULL,
+    user_type public.auth NOT NULL,
+    profile_picture bytea,
+    uni_id serial,
+    CONSTRAINT "Users_pk" PRIMARY KEY (user_id),
+    CONSTRAINT unique_username UNIQUE (username)
 );
-CREATE TABLE Users (
-    user_id SERIAL PRIMARY KEY,
-    first_name VARCHAR(255) NOT NULL,
-    last_name VARCHAR(255) NOT NULL,
-    email VARCHAR(255) NOT NULL UNIQUE,
-    password VARCHAR(255) NOT NULL,
-    auth user_type NOT NULL DEFAULT 'student',
-    is_affiliated_with_rso BOOLEAN DEFAULT FALSE -- Optional flag for student affiliation
+-- ddl-end --
+ALTER TABLE public."Users" ENABLE ROW LEVEL SECURITY;
+-- ddl-end --
+-- object: public.event | type: TYPE --
+-- DROP TYPE IF EXISTS public.event CASCADE;
+CREATE TYPE public.event AS ENUM ('public', 'private', 'rso_event');
+-- ddl-end --
+-- object: public."RSOs" | type: TABLE --
+-- DROP TABLE IF EXISTS public."RSOs" CASCADE;
+CREATE TABLE public."RSOs" (
+    rso_id serial NOT NULL,
+    name varchar(255) NOT NULL,
+    description text,
+    uni_id serial NOT NULL,
+    admin_id serial NOT NULL,
+    date_created timestamp with time zone NOT NULL,
+    CONSTRAINT "RSOs_pk" PRIMARY KEY (rso_id),
+    CONSTRAINT rso_uniques UNIQUE (name)
 );
-CREATE TABLE RSOs (
-    rso_id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL UNIQUE,
-    university_id INTEGER REFERENCES Universities(university_id) NOT NULL,
-    admin_id INTEGER REFERENCES Users(user_id) NOT NULL
+-- ddl-end --
+ALTER TABLE public."RSOs" ENABLE ROW LEVEL SECURITY;
+-- ddl-end --
+-- object: public.categories | type: TYPE --
+-- DROP TYPE IF EXISTS public.categories CASCADE;
+CREATE TYPE public.categories AS ENUM ('social', 'fundraising', 'tech talk', 'academic');
+-- ddl-end --
+-- object: public."Events" | type: TABLE --
+-- DROP TABLE IF EXISTS public."Events" CASCADE;
+CREATE TABLE public."Events" (
+    event_id serial NOT NULL,
+    name varchar(255) NOT NULL,
+    tags public.categories [],
+    description text,
+    start_time timestamp with time zone NOT NULL,
+    end_time timestamp with time zone NOT NULL,
+    loc_id serial,
+    contact_phone varchar(15),
+    contact_email varchar(255),
+    visibility public.event NOT NULL,
+    uni_id serial,
+    rso_id serial,
+    superadmin_approval boolean DEFAULT FALSE,
+    CONSTRAINT "Events_pk" PRIMARY KEY (event_id)
 );
-CREATE TABLE User_RSO_Membership (
-    user_id INTEGER REFERENCES Users(user_id) NOT NULL,
-    rso_id INTEGER REFERENCES RSOs(rso_id) NOT NULL,
-    PRIMARY KEY (user_id, rso_id) -- Define composite primary key for both user and RSO
+-- ddl-end --
+-- object: public."User_RSO_Membership" | type: TABLE --
+-- DROP TABLE IF EXISTS public."User_RSO_Membership" CASCADE;
+CREATE TABLE public."User_RSO_Membership" (
+    user_id serial NOT NULL,
+    rso_id serial NOT NULL,
+    CONSTRAINT "User_RSO_Membership_pk" PRIMARY KEY (user_id, rso_id)
 );
-CREATE TABLE Events (
-    event_id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    event_category VARCHAR(255) NOT NULL,
-    description TEXT,
-    event_time TIMESTAMP NOT NULL,
-    event_date DATE NOT NULL,
-    location_id INTEGER REFERENCES Locations(location_id) NOT NULL,
-    contact_phone VARCHAR(255),
-    contact_email VARCHAR(255),
-    visibility event_type NOT NULL,
-    university_id INTEGER REFERENCES Universities(university_id),
-    rso_id INTEGER REFERENCES RSOs(rso_id),
-    super_admin_approved BOOLEAN DEFAULT FALSE
+-- ddl-end --
+-- object: public."RSO_Apps" | type: TABLE --
+-- DROP TABLE IF EXISTS public."RSO_Apps" CASCADE;
+CREATE TABLE public."RSO_Apps" (
+    id serial NOT NULL,
+    name varchar(255) NOT NULL,
+    description text DEFAULT 'None given',
+    uni_id serial NOT NULL,
+    admin_id serial NOT NULL,
+    student1_id serial NOT NULL,
+    student2_id serial NOT NULL,
+    student3_id serial NOT NULL,
+    superadmin_approval boolean NOT NULL DEFAULT FALSE,
+    CONSTRAINT no_dupes UNIQUE NULLS NOT DISTINCT (name),
+    CONSTRAINT "RSO_Apps_pk" PRIMARY KEY (id)
 );
-CREATE FUNCTION validate_event_creator() RETURNS TRIGGER AS $$ BEGIN IF NEW.user_id NOT IN (
-    SELECT user_id
-    FROM Users
-    WHERE auth = 'admin' -- Use auth instead of user_type
-) THEN RAISE EXCEPTION 'Only admins can create events!';
-ELSIF NEW.event_type = 'public'
-AND NEW.rso_id IS NULL THEN
-UPDATE Events
-SET super_admin_approved = FALSE
-WHERE event_id = NEW.event_id;
-END IF;
-RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-CREATE TRIGGER validate_event_creation BEFORE
-INSERT ON Events FOR EACH ROW EXECUTE PROCEDURE validate_event_creator();
-CREATE TABLE Event_Feedback (
-    feedback_id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES Users(user_id) NOT NULL,
-    event_id INTEGER REFERENCES Events(event_id) NOT NULL,
-    content TEXT,
-    -- Can store comment text or be null for ratings
-    rating INTEGER CHECK (
+-- ddl-end --
+-- object: public."Event_Feedback" | type: TABLE --
+-- DROP TABLE IF EXISTS public."Event_Feedback" CASCADE;
+CREATE TABLE public."Event_Feedback" (
+    fb_id serial NOT NULL,
+    user_id serial NOT NULL,
+    event_id serial NOT NULL,
+    content text,
+    rating smallint,
+    feedback_type varchar(15) NOT NULL,
+    "timestamp" timestamp DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT rating CHECK (
         rating >= 1
         AND rating <= 5
     ),
-    -- Rating value (null for comments)
-    feedback_type VARCHAR(255) CHECK (feedback_type IN ('comment', 'rating')),
-    -- Differentiates comment or rating
-    timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    CONSTRAINT fb_type CHECK (feedback_type IN ('comment', 'rating')),
+    CONSTRAINT "Event_Feedback_pk" PRIMARY KEY (fb_id)
 );
--- TODO: Debug this trigger
--- CREATE FUNCTION validate_rso_creation() RETURNS TRIGGER AS $$ BEGIN -- Declare variables
--- DECLARE user_count INTEGER;
--- DECLARE user_university INTEGER;
--- DECLARE is_admin_set BOOLEAN DEFAULT FALSE;
--- -- Execute SELECT statements and assign results to variables
--- SELECT COUNT(*) INTO user_count -- Use COUNT(*) instead of COUNT(user_id)
--- FROM User_RSO_Membership
--- WHERE rso_id = NEW.rso_id;
--- SELECT university_id INTO user_university
--- FROM Users
--- WHERE user_id = NEW.admin_id;
--- -- Rest of the function logic remains the same
--- IF user_count < 4 THEN RAISE EXCEPTION 'RSO creation requires at least 4 members!';
--- ELSIF user_university != (
---     SELECT university_id
---     FROM Users
---     WHERE user_id IN (
---             SELECT user_id
---             FROM User_RSO_Membership
---             WHERE rso_id = NEW.rso_id
---         )
--- ) THEN RAISE EXCEPTION 'All RSO members must be from the same university!';
--- ELSIF NEW.admin_id IS NULL THEN RAISE EXCEPTION 'An admin must be set for the RSO!';
--- END IF;
--- RETURN NEW;
--- END;
--- $$ LANGUAGE plpgsql;
--- CREATE TRIGGER validate_rso_on_insert BEFORE
--- INSERT ON RSOs FOR EACH ROW EXECUTE PROCEDURE validate_rso_creation();
+-- ddl-end --
+-- object: public."Locations" | type: TABLE --
+-- DROP TABLE IF EXISTS public."Locations" CASCADE;
+CREATE TABLE public."Locations" (
+    loc_id serial NOT NULL,
+    address text,
+    latitude varchar(15) NOT NULL,
+    longitude varchar(15) NOT NULL,
+    CONSTRAINT "Locations_pk" PRIMARY KEY (loc_id)
+);
+-- ddl-end --
+-- object: public.validate_non_overlapping_events | type: FUNCTION --
+-- DROP FUNCTION IF EXISTS public.validate_non_overlapping_events() CASCADE;
+CREATE FUNCTION public.validate_non_overlapping_events () RETURNS trigger LANGUAGE plpgsql VOLATILE CALLED ON NULL INPUT SECURITY INVOKER PARALLEL SAFE COST 1 AS $$ IF EXISTS (
+    SELECT 1
+    FROM Events ev
+    WHERE (
+            -- Check for overlap with existing events
+            (
+                NEW.start_time < ev.end_time
+                AND NEW.end_time > ev.start_time
+            )
+            OR (
+                NEW.start_time <= ev.start_time
+                AND NEW.end_time >= ev.end_time
+            )
+            OR (
+                NEW.start_time >= ev.start_time
+                AND NEW.end_time <= ev.end_time
+            )
+        )
+        AND ev.event_id <> NEW.event_id -- Exclude the event being inserted/updated
+) THEN RAISE EXCEPTION 'Event conflicts with existing event times';
+END IF;
+RETURN NEW;
+$$;
+-- ddl-end --
+-- object: validate_event_before_insert | type: TRIGGER --
+-- DROP TRIGGER IF EXISTS validate_event_before_insert ON public."Events" CASCADE;
+CREATE TRIGGER validate_event_before_insert BEFORE
+INSERT ON public."Events" FOR EACH ROW EXECUTE PROCEDURE public.validate_non_overlapping_events();
+-- ddl-end --
+-- object: validate_before_update | type: TRIGGER --
+-- DROP TRIGGER IF EXISTS validate_before_update ON public."Events" CASCADE;
+CREATE TRIGGER validate_before_update BEFORE
+UPDATE ON public."Events" FOR EACH STATEMENT EXECUTE PROCEDURE public.validate_non_overlapping_events();
+-- ddl-end --
+-- object: public.validate_admin_association | type: FUNCTION --
+-- DROP FUNCTION IF EXISTS public.validate_admin_association() CASCADE;
+CREATE FUNCTION public.validate_admin_association () RETURNS trigger LANGUAGE plpgsql VOLATILE CALLED ON NULL INPUT SECURITY INVOKER PARALLEL RESTRICTED COST 1 AS $$ IF NEW.auth = 'admin' THEN IF NOT EXISTS (
+    SELECT 1
+    FROM User_RSO_Membership
+    WHERE user_id = NEW.user_id
+) THEN RAISE EXCEPTION 'Admin must be associated with at least one RSO';
+END IF;
+END IF;
+RETURN NEW;
+$$;
+-- ddl-end --
+-- object: validate_admin_before_insert | type: TRIGGER --
+-- DROP TRIGGER IF EXISTS validate_admin_before_insert ON public."Users" CASCADE;
+CREATE TRIGGER validate_admin_before_insert BEFORE
+INSERT ON public."Users" FOR EACH ROW EXECUTE PROCEDURE public.validate_admin_association();
+-- ddl-end --
+-- object: validate_admin_before_update | type: TRIGGER --
+-- DROP TRIGGER IF EXISTS validate_admin_before_update ON public."Users" CASCADE;
+CREATE TRIGGER validate_admin_before_update BEFORE
+UPDATE ON public."Users" FOR EACH ROW EXECUTE PROCEDURE public.validate_admin_association();
+-- ddl-end --
+-- object: public.get_student_count | type: FUNCTION --
+-- DROP FUNCTION IF EXISTS public.get_student_count(serial) CASCADE;
+CREATE FUNCTION public.get_student_count (IN university_id integer) RETURNS integer LANGUAGE plpgsql VOLATILE CALLED ON NULL INPUT SECURITY INVOKER PARALLEL UNSAFE COST 1 AS $$
+SELECT COUNT(*)
+FROM Users
+WHERE uni_id = university_id;
+$$;
+-- ddl-end --
+-- object: public.update_student_count | type: FUNCTION --
+-- DROP FUNCTION IF EXISTS public.update_student_count() CASCADE;
+CREATE FUNCTION public.update_student_count () RETURNS trigger LANGUAGE plpgsql VOLATILE CALLED ON NULL INPUT SECURITY INVOKER PARALLEL UNSAFE COST 1 AS $$
+UPDATE Universities
+SET student_no = get_student_count(NEW.uni_id)
+WHERE uni_id = NEW.uni_id;
+RETURN NEW;
+$$;
+-- ddl-end --
+-- object: update_student_count | type: TRIGGER --
+-- DROP TRIGGER IF EXISTS update_student_count ON public."Users" CASCADE;
+CREATE TRIGGER update_student_count
+AFTER
+INSERT
+    OR DELETE
+    OR
+UPDATE ON public."Users" FOR EACH ROW EXECUTE PROCEDURE public.update_student_count();
+-- ddl-end --
+-- object: loc | type: CONSTRAINT --
+-- ALTER TABLE public."Universities" DROP CONSTRAINT IF EXISTS loc CASCADE;
+ALTER TABLE public."Universities"
+ADD CONSTRAINT loc FOREIGN KEY (loc_id) REFERENCES public."Locations" (loc_id) MATCH SIMPLE ON DELETE
+SET DEFAULT ON UPDATE CASCADE;
+-- ddl-end --
+-- object: uni_id | type: CONSTRAINT --
+-- ALTER TABLE public."Users" DROP CONSTRAINT IF EXISTS uni_id CASCADE;
+ALTER TABLE public."Users"
+ADD CONSTRAINT uni_id FOREIGN KEY (uni_id) REFERENCES public."Universities" (uni_id) MATCH SIMPLE ON DELETE
+SET NULL ON UPDATE CASCADE;
+-- ddl-end --
+-- object: uni_id | type: CONSTRAINT --
+-- ALTER TABLE public."RSOs" DROP CONSTRAINT IF EXISTS uni_id CASCADE;
+ALTER TABLE public."RSOs"
+ADD CONSTRAINT uni_id FOREIGN KEY (uni_id) REFERENCES public."Universities" (uni_id) MATCH SIMPLE ON DELETE
+SET NULL ON UPDATE CASCADE;
+-- ddl-end --
+-- object: owner_id | type: CONSTRAINT --
+-- ALTER TABLE public."RSOs" DROP CONSTRAINT IF EXISTS owner_id CASCADE;
+ALTER TABLE public."RSOs"
+ADD CONSTRAINT owner_id FOREIGN KEY (admin_id) REFERENCES public."Users" (user_id) MATCH SIMPLE ON DELETE
+SET NULL ON UPDATE CASCADE;
+-- ddl-end --
+-- object: uni | type: CONSTRAINT --
+-- ALTER TABLE public."Events" DROP CONSTRAINT IF EXISTS uni CASCADE;
+ALTER TABLE public."Events"
+ADD CONSTRAINT uni FOREIGN KEY (uni_id) REFERENCES public."Universities" (uni_id) MATCH SIMPLE ON DELETE
+SET NULL ON UPDATE CASCADE;
+-- ddl-end --
+-- object: rso | type: CONSTRAINT --
+-- ALTER TABLE public."Events" DROP CONSTRAINT IF EXISTS rso CASCADE;
+ALTER TABLE public."Events"
+ADD CONSTRAINT rso FOREIGN KEY (rso_id) REFERENCES public."RSOs" (rso_id) MATCH SIMPLE ON DELETE
+SET DEFAULT ON UPDATE CASCADE;
+-- ddl-end --
+-- object: loc | type: CONSTRAINT --
+-- ALTER TABLE public."Events" DROP CONSTRAINT IF EXISTS loc CASCADE;
+ALTER TABLE public."Events"
+ADD CONSTRAINT loc FOREIGN KEY (loc_id) REFERENCES public."Locations" (loc_id) MATCH SIMPLE ON DELETE
+SET NULL ON UPDATE CASCADE;
+-- ddl-end --
+-- object: "user" | type: CONSTRAINT --
+-- ALTER TABLE public."User_RSO_Membership" DROP CONSTRAINT IF EXISTS "user" CASCADE;
+ALTER TABLE public."User_RSO_Membership"
+ADD CONSTRAINT "user" FOREIGN KEY (user_id) REFERENCES public."Users" (user_id) MATCH SIMPLE ON DELETE CASCADE ON UPDATE CASCADE;
+-- ddl-end --
+-- object: rso | type: CONSTRAINT --
+-- ALTER TABLE public."User_RSO_Membership" DROP CONSTRAINT IF EXISTS rso CASCADE;
+ALTER TABLE public."User_RSO_Membership"
+ADD CONSTRAINT rso FOREIGN KEY (rso_id) REFERENCES public."RSOs" (rso_id) MATCH SIMPLE ON DELETE CASCADE ON UPDATE CASCADE;
+-- ddl-end --
+-- object: uni | type: CONSTRAINT --
+-- ALTER TABLE public."RSO_Apps" DROP CONSTRAINT IF EXISTS uni CASCADE;
+ALTER TABLE public."RSO_Apps"
+ADD CONSTRAINT uni FOREIGN KEY (uni_id) REFERENCES public."Universities" (uni_id) MATCH SIMPLE ON DELETE CASCADE ON UPDATE CASCADE;
+-- ddl-end --
+-- object: admin | type: CONSTRAINT --
+-- ALTER TABLE public."RSO_Apps" DROP CONSTRAINT IF EXISTS admin CASCADE;
+ALTER TABLE public."RSO_Apps"
+ADD CONSTRAINT admin FOREIGN KEY (admin_id) REFERENCES public."Users" (user_id) MATCH SIMPLE ON DELETE
+SET NULL ON UPDATE CASCADE;
+-- ddl-end --
+-- object: s1 | type: CONSTRAINT --
+-- ALTER TABLE public."RSO_Apps" DROP CONSTRAINT IF EXISTS s1 CASCADE;
+ALTER TABLE public."RSO_Apps"
+ADD CONSTRAINT s1 FOREIGN KEY (student1_id) REFERENCES public."Users" (user_id) MATCH SIMPLE ON DELETE
+SET NULL ON UPDATE CASCADE;
+-- ddl-end --
+-- object: s2 | type: CONSTRAINT --
+-- ALTER TABLE public."RSO_Apps" DROP CONSTRAINT IF EXISTS s2 CASCADE;
+ALTER TABLE public."RSO_Apps"
+ADD CONSTRAINT s2 FOREIGN KEY (student2_id) REFERENCES public."Users" (user_id) MATCH SIMPLE ON DELETE
+SET NULL ON UPDATE CASCADE;
+-- ddl-end --
+-- object: s3 | type: CONSTRAINT --
+-- ALTER TABLE public."RSO_Apps" DROP CONSTRAINT IF EXISTS s3 CASCADE;
+ALTER TABLE public."RSO_Apps"
+ADD CONSTRAINT s3 FOREIGN KEY (student3_id) REFERENCES public."Users" (user_id) MATCH SIMPLE ON DELETE
+SET NULL ON UPDATE CASCADE;
+-- ddl-end --
+-- object: "user" | type: CONSTRAINT --
+-- ALTER TABLE public."Event_Feedback" DROP CONSTRAINT IF EXISTS "user" CASCADE;
+ALTER TABLE public."Event_Feedback"
+ADD CONSTRAINT "user" FOREIGN KEY (user_id) REFERENCES public."Users" (user_id) MATCH SIMPLE ON DELETE CASCADE ON UPDATE CASCADE;
+-- ddl-end --
+-- object: event | type: CONSTRAINT --
+-- ALTER TABLE public."Event_Feedback" DROP CONSTRAINT IF EXISTS event CASCADE;
+ALTER TABLE public."Event_Feedback"
+ADD CONSTRAINT event FOREIGN KEY (event_id) REFERENCES public."Events" (event_id) MATCH SIMPLE ON DELETE CASCADE ON UPDATE CASCADE;
+-- ddl-end --
