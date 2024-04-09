@@ -1,9 +1,10 @@
-INSERT INTO Users (
+INSERT INTO public."Users" (
         first_name,
         last_name,
+        username,
+        "password",
+        uni_id,
         email,
-        password,
-        auth,
-        is_affiliated_with_rso
+        user_type
     )
-VALUES ('%s', '%s', '%s', '%s', '%s', %v);
+VALUES ('%s', '%s', '%s', '%s', '%d', '%s', '%s');

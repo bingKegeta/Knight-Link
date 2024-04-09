@@ -18,26 +18,38 @@ import (
 
 // * Probably need to add more structs to make the JSONs easier to make(?)
 type User struct {
-	User_id         int    `json:"user_id"`
-	Fname           string `json:"first_name"`
-	Lname           string `json:"last_name"`
-	Email           string `json:"email"`
-	Authority       string `json:"auth"`
-	RSO_affiliation bool   `json:"is_affiliated_with_rso"`
+	UserID         int    `json:"user_id"`
+	FirstName      string `json:"first_name"`
+	LastName       string `json:"last_name"`
+	UserName       string `json:"username"`
+	Email          string `json:"email"`
+	Auth           string `json:"auth"`
+	RSOAffiliation bool   `json:"is_affiliated_with_rso"`
+}
+
+type LoginForm struct {
+	UserName string `json:"username"`
+	Password string `json:"password"`
 }
 
 type UserNoId struct {
-	Fname           string `json:"first_name"`
-	Lname           string `json:"last_name"`
-	Email           string `json:"email"`
-	Password        string `json:"password"`
-	Authority       string `json:"auth"`
-	RSO_affiliation bool   `json:"is_affiliated_with_rso"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	UserName  string `json:"username"`
+	Password  string `json:"password"`
+	Uid       int    `json:"uni_id"`
+	Email     string `json:"email"`
+	UserType  string `json:"user_type"`
 }
 
 type SQLParseToType struct {
 	query        string
 	CustomStruct interface{}
+}
+
+type AuthMessage struct {
+	Status string `json:"status"`
+	Info   string `json:"info"`
 }
 
 // Function to establish a connection to the database
@@ -105,13 +117,8 @@ func GetUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query_string, err := parseSQL("./SQL/api/user/GetById.sql", uid)
-	if err != nil {
-		render.Status(r, http.StatusInternalServerError)
-		render.PlainText(w, r, err.Error())
-		return
-	}
-
 	rows, err := db.Query(query_string)
+
 	if err != nil {
 		render.Status(r, http.StatusNotFound)
 		render.PlainText(w, r, err.Error())
@@ -119,17 +126,20 @@ func GetUser(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	var user User
-	rows.Next()
-	err = rows.Scan(&user.User_id, &user.Fname, &user.Lname, &user.Email, &user.Authority, &user.RSO_affiliation)
-	if err != nil {
-		render.Status(r, http.StatusNotFound)
-		render.PlainText(w, r, err.Error())
-		return
+	var scannedUser User
+
+	for rows.Next() {
+		err = rows.Scan(&scannedUser.UserID, &scannedUser.FirstName, &scannedUser.LastName, &scannedUser.Email, &scannedUser.UserName)
+		if err != nil {
+			log.Printf("Error scanning row: %v", err)
+			render.PlainText(w, r, "Error scanning row")
+			return
+		}
+		fmt.Println("User Details:", scannedUser)
 	}
 
 	render.Status(r, http.StatusFound)
-	render.JSON(w, r, user)
+	render.JSON(w, r, scannedUser)
 }
 
 func DeleteUser(w http.ResponseWriter, r *http.Request) {
@@ -171,6 +181,12 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 	// Set the password to the newly hashed password
 	user.Password = string(hashedPassword)
 
+	// Every user is by default an student, so assign it here
+	user.UserType = "student"
+	// This should be selected in the creation logic or something. This selects
+	// the school
+	user.Uid = 1
+
 	query, err := parseSQL("./SQL/api/user/CreateUser.sql", user)
 	if err != nil {
 		render.Status(r, http.StatusInternalServerError)
@@ -189,7 +205,56 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func Login(w http.ResponseWriter, r *http.Request) {
+
+	db, err := connectToDB()
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.PlainText(w, r, err.Error())
+		return
+	}
+	defer db.Close()
+
+	decoder := json.NewDecoder(r.Body)
+
+	var userLogin LoginForm
+	err = decoder.Decode(&userLogin)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.PlainText(w, r, err.Error())
+		return
+	}
+
+	// Hash the password and test against the DB
+	//hashedPassword, err := bcrypt.GenerateFromPassword([]byte(userLogin.Password), bcrypt.DefaultCost)
+
+	if err != nil {
+		// Handle error during hashing
+		render.Status(r, http.StatusInternalServerError)
+		render.PlainText(w, r, err.Error())
+		return
+	}
+
+	var DbUser LoginForm
+	err = db.QueryRow("SELECT username, password FROM users WHERE username=$1", userLogin.UserName).Scan(&DbUser.UserName, &DbUser.Password)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.PlainText(w, r, err.Error())
+		return
+	}
+
+	// Doing hashing against the db..
+	// hashedPassword = fmt.Sprintf("%b", hashedPassword)
+
+	// if DbUser.Password != hashedPassword {
+	// 	render.Status(r, http.StatusInternalServerError)
+	// 	render.PlainText(w, r, "Invalid username or password")
+	// 	return
+	// }
+
 	// TODO: Implement the logic to login a user
+	render.JSON(w, r, userLogin)
 	render.JSON(w, r, "Login endpoint")
 }
 
