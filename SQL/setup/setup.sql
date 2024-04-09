@@ -10,18 +10,14 @@
 -- DROP DATABASE IF EXISTS "Knight-Link";
 -- CREATE DATABASE "Knight-Link";
 -- ddl-end --
-
 SET check_function_bodies = false;
 -- ddl-end --
 -- object: public.auth | type: TYPE --
 -- DROP TYPE IF EXISTS public.auth CASCADE;
-
 CREATE TYPE public.auth AS ENUM ('student', 'admin', 'superadmin');
 -- ddl-end --
 -- object: public."Universities" | type: TABLE --
 -- DROP TABLE IF EXISTS public."Universities" CASCADE;
-
-
 CREATE TABLE public."Universities" (
     uni_id serial NOT NULL,
     name varchar(255) NOT NULL,
@@ -29,18 +25,28 @@ CREATE TABLE public."Universities" (
     student_no integer,
     picture bytea,
     CONSTRAINT "Universities_pk" PRIMARY KEY (uni_id),
-    CONSTRAINT uni_ques UNIQUE (name, loc_id)
+    CONSTRAINT uni_ques UNIQUE (name)
 );
 -- ddl-end --
 COMMENT ON COLUMN public."Universities".student_no IS E'Number of students in the university currently';
+-- object: public."Locations" | type: TABLE --
+-- DROP TABLE IF EXISTS public."Locations" CASCADE;
+CREATE TABLE public."Locations" (
+    loc_id serial NOT NULL,
+    address text,
+    latitude varchar(15) NOT NULL,
+    longitude varchar(15) NOT NULL,
+    CONSTRAINT "Locations_pk" PRIMARY KEY (loc_id)
+);
+-- ddl-end --
 -- ddl-end --
 -- object: public."Users" | type: TABLE --
 -- DROP TABLE IF EXISTS public."Users" CASCADE;
-
 CREATE TABLE public."Users" (
     user_id serial NOT NULL,
     first_name varchar(255),
     last_name varchar(255),
+    email varchar(255),
     username varchar(255) NOT NULL,
     password varchar(255) NOT NULL,
     user_type public.auth NOT NULL,
@@ -58,7 +64,6 @@ CREATE TYPE public.event AS ENUM ('public', 'private', 'rso_event');
 -- ddl-end --
 -- object: public."RSOs" | type: TABLE --
 -- DROP TABLE IF EXISTS public."RSOs" CASCADE;
-
 CREATE TABLE public."RSOs" (
     rso_id serial NOT NULL,
     name varchar(255) NOT NULL,
@@ -74,12 +79,10 @@ ALTER TABLE public."RSOs" ENABLE ROW LEVEL SECURITY;
 -- ddl-end --
 -- object: public.categories | type: TYPE --
 -- DROP TYPE IF EXISTS public.categories CASCADE;
-
 CREATE TYPE public.categories AS ENUM ('social', 'fundraising', 'tech talk', 'academic');
 -- ddl-end --
 -- object: public."Events" | type: TABLE --
 -- DROP TABLE IF EXISTS public."Events" CASCADE;
-
 CREATE TABLE public."Events" (
     event_id serial NOT NULL,
     name varchar(255) NOT NULL,
@@ -99,17 +102,14 @@ CREATE TABLE public."Events" (
 -- ddl-end --
 -- object: public."User_RSO_Membership" | type: TABLE --
 -- DROP TABLE IF EXISTS public."User_RSO_Membership" CASCADE;
-
 CREATE TABLE public."User_RSO_Membership" (
     user_id serial NOT NULL,
     rso_id serial NOT NULL,
     CONSTRAINT "User_RSO_Membership_pk" PRIMARY KEY (user_id, rso_id)
 );
-
 -- ddl-end --
 -- object: public."RSO_Apps" | type: TABLE --
 -- DROP TABLE IF EXISTS public."RSO_Apps" CASCADE;
-
 CREATE TABLE public."RSO_Apps" (
     id serial NOT NULL,
     name varchar(255) NOT NULL,
@@ -123,11 +123,9 @@ CREATE TABLE public."RSO_Apps" (
     CONSTRAINT no_dupes UNIQUE NULLS NOT DISTINCT (name),
     CONSTRAINT "RSO_Apps_pk" PRIMARY KEY (id)
 );
-
 -- ddl-end --
 -- object: public."Event_Feedback" | type: TABLE --
 -- DROP TABLE IF EXISTS public."Event_Feedback" CASCADE;
-
 CREATE TABLE public."Event_Feedback" (
     fb_id serial NOT NULL,
     user_id serial NOT NULL,
@@ -144,26 +142,12 @@ CREATE TABLE public."Event_Feedback" (
     CONSTRAINT "Event_Feedback_pk" PRIMARY KEY (fb_id)
 );
 -- ddl-end --
--- object: public."Locations" | type: TABLE --
--- DROP TABLE IF EXISTS public."Locations" CASCADE;
-CREATE TABLE public."Locations" (
-    loc_id serial NOT NULL,
-    address text,
-    latitude varchar(15) NOT NULL,
-    longitude varchar(15) NOT NULL,
-    CONSTRAINT "Locations_pk" PRIMARY KEY (loc_id)
-);
--- ddl-end --
 -- object: public.validate_non_overlapping_events | type: FUNCTION --
 -- DROP FUNCTION IF EXISTS public.validate_non_overlapping_events() CASCADE;
-CREATE FUNCTION public.validate_non_overlapping_events() RETURNS trigger
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    IF EXISTS (
-        SELECT 1
-        FROM public."Events" ev
-        WHERE (
+CREATE FUNCTION public.validate_non_overlapping_events() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF EXISTS (
+    SELECT 1
+    FROM public."Events" ev
+    WHERE (
             -- Check for overlap with existing events
             (
                 NEW.start_time < ev.end_time
@@ -179,13 +163,11 @@ BEGIN
             )
         )
         AND ev.event_id <> NEW.event_id -- Exclude the event being inserted/updated
-    ) THEN 
-        RAISE EXCEPTION 'Event conflicts with existing event times';
-    END IF;
-    RETURN NEW;
+) THEN RAISE EXCEPTION 'Event conflicts with existing event times';
+END IF;
+RETURN NEW;
 END;
 $$;
-
 -- ddl-end --
 -- object: validate_event_before_insert | type: TRIGGER --
 -- DROP TRIGGER IF EXISTS validate_event_before_insert ON public."Events" CASCADE;
@@ -199,23 +181,16 @@ UPDATE ON public."Events" FOR EACH STATEMENT EXECUTE PROCEDURE public.validate_n
 -- ddl-end --
 -- object: public.validate_admin_association | type: FUNCTION --
 -- DROP FUNCTION IF EXISTS public.validate_admin_association() CASCADE;
-CREATE FUNCTION public.validate_admin_association() RETURNS trigger
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    IF NEW.user_type = 'admin' THEN
-        IF NOT EXISTS (
-            SELECT 1
-            FROM public."User_RSO_Membership"
-            WHERE user_id = NEW.user_id
-        ) THEN 
-            RAISE EXCEPTION 'Admin must be associated with at least one RSO';
-        END IF;
-    END IF;
-    RETURN NEW;
+CREATE FUNCTION public.validate_admin_association() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.user_type = 'admin' THEN IF NOT EXISTS (
+    SELECT 1
+    FROM public."User_RSO_Membership"
+    WHERE user_id = NEW.user_id
+) THEN RAISE EXCEPTION 'Admin must be associated with at least one RSO';
+END IF;
+END IF;
+RETURN NEW;
 END;
 $$;
-
 -- ddl-end --
 -- object: validate_admin_before_insert | type: TRIGGER --
 -- DROP TRIGGER IF EXISTS validate_admin_before_insert ON public."Users" CASCADE;
@@ -229,38 +204,28 @@ UPDATE ON public."Users" FOR EACH ROW EXECUTE PROCEDURE public.validate_admin_as
 -- ddl-end --
 -- object: public.get_student_count | type: FUNCTION --
 -- DROP FUNCTION IF EXISTS public.get_student_count(serial) CASCADE;
-CREATE OR REPLACE FUNCTION public.get_student_count (IN university_id integer) RETURNS integer 
-LANGUAGE plpgsql 
-VOLATILE CALLED ON NULL INPUT SECURITY INVOKER PARALLEL UNSAFE COST 1 AS $$
-DECLARE
-    count_result integer;
+CREATE OR REPLACE FUNCTION public.get_student_count (IN university_id integer) RETURNS integer LANGUAGE plpgsql VOLATILE CALLED ON NULL INPUT SECURITY INVOKER PARALLEL UNSAFE COST 1 AS $$
+DECLARE count_result integer;
 BEGIN
-    SELECT COUNT(*) INTO count_result
-    FROM public."Users"
-    WHERE uni_id = university_id;
-    RETURN count_result;
+SELECT COUNT(*) INTO count_result
+FROM public."Users"
+WHERE uni_id = university_id;
+RETURN count_result;
 END;
 $$;
-
 -- ddl-end --
 -- object: public.update_student_count | type: FUNCTION --
 -- DROP FUNCTION IF EXISTS public.update_student_count() CASCADE;
-CREATE OR REPLACE FUNCTION public.update_student_count () RETURNS trigger 
-LANGUAGE plpgsql
-VOLATILE CALLED ON NULL INPUT SECURITY INVOKER PARALLEL UNSAFE COST 1 AS $$
-DECLARE
-	count_result integer;
+CREATE OR REPLACE FUNCTION public.update_student_count () RETURNS trigger LANGUAGE plpgsql VOLATILE CALLED ON NULL INPUT SECURITY INVOKER PARALLEL UNSAFE COST 1 AS $$
+DECLARE count_result integer;
 BEGIN
-    SELECT public.get_student_count(NEW.uni_id) INTO count_result;
-    
-    UPDATE public."Universities"
-    SET student_no = count_result
-    WHERE uni_id = NEW.uni_id;
-    
-    RETURN NEW;
+SELECT public.get_student_count(NEW.uni_id) INTO count_result;
+UPDATE public."Universities"
+SET student_no = count_result
+WHERE uni_id = NEW.uni_id;
+RETURN NEW;
 END;
 $$;
-
 -- ddl-end --
 -- object: update_student_count | type: TRIGGER --
 -- DROP TRIGGER IF EXISTS update_student_count ON public."Users" CASCADE;
@@ -270,12 +235,6 @@ INSERT
     OR DELETE
     OR
 UPDATE ON public."Users" FOR EACH ROW EXECUTE PROCEDURE public.update_student_count();
--- ddl-end --
--- object: loc | type: CONSTRAINT --
--- ALTER TABLE public."Universities" DROP CONSTRAINT IF EXISTS loc CASCADE;
-ALTER TABLE public."Universities"
-ADD CONSTRAINT loc FOREIGN KEY (loc_id) REFERENCES public."Locations" (loc_id) MATCH SIMPLE ON DELETE
-SET DEFAULT ON UPDATE CASCADE;
 -- ddl-end --
 -- object: uni_id | type: CONSTRAINT --
 -- ALTER TABLE public."Users" DROP CONSTRAINT IF EXISTS uni_id CASCADE;
