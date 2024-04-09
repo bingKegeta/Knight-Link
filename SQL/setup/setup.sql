@@ -28,7 +28,6 @@ CREATE TABLE public."Universities" (
     description text,
     student_no integer,
     picture bytea,
-    loc_id serial NOT NULL,
     CONSTRAINT "Universities_pk" PRIMARY KEY (uni_id),
     CONSTRAINT uni_ques UNIQUE (name, loc_id)
 );
