@@ -1,15 +1,36 @@
 package routes
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"net/http"
 
 	"github.com/bingKegeta/Knight-Link/internal/handlers"
 	"github.com/go-chi/chi"
+	"github.com/go-chi/jwtauth"
+
 	"github.com/go-chi/chi/middleware"
 	"github.com/go-chi/render"
 )
 
-func Routes() *chi.Mux {
+//var tokenAuth *jwtauth.JWTAuth
+
+func generateSecureKey() (string, error) {
+	key := make([]byte, 32) // 256 bits
+	if _, err := rand.Read(key); err != nil {
+		return "", err
+	}
+
+	return base64.StdEncoding.EncodeToString(key), nil
+}
+
+func TokenAuthMiddleware(tokenAuth *jwtauth.JWTAuth, handler func(*jwtauth.JWTAuth, http.ResponseWriter, *http.Request)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		handler(tokenAuth, w, r)
+	}
+}
+
+func Routes(tokenAuth *jwtauth.JWTAuth) *chi.Mux {
 	router := chi.NewRouter()
 	router.Use(
 		render.SetContentType(render.ContentTypeJSON),
@@ -20,7 +41,7 @@ func Routes() *chi.Mux {
 
 	router.Route("/v1", func(r chi.Router) {
 		r.Mount("/api/users", UserRoutes())
-		r.Mount("/api/auth", AuthRoutes())
+		r.Mount("/api/auth", AuthRoutes(tokenAuth))
 		r.Mount("/api/events", EventRoutes())
 		r.Mount("/api/rsos", RSORoutes())
 		r.Mount("/api/unis", UniRoutes())
@@ -42,9 +63,9 @@ func UserRoutes() http.Handler {
 	return router
 }
 
-func AuthRoutes() http.Handler {
+func AuthRoutes(tokenAuth *jwtauth.JWTAuth) http.Handler {
 	router := chi.NewRouter()
-	router.Post("/login", handlers.Login)
+	router.Post("/login", TokenAuthMiddleware(tokenAuth, handlers.Login))
 	router.Post("/logout", handlers.Logout)
 
 	// Add new auth-related endpoints here (e.g., refresh token)

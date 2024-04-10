@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"time"
 
 	"github.com/go-chi/chi"
+	"github.com/go-chi/jwtauth"
 	"github.com/go-chi/render"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -204,7 +206,7 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 	render.JSON(w, r, "User Created")
 }
 
-func Login(w http.ResponseWriter, r *http.Request) {
+func Login(tokenAuth *jwtauth.JWTAuth, w http.ResponseWriter, r *http.Request) {
 
 	db, err := connectToDB()
 	if err != nil {
@@ -225,37 +227,54 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Hash the password and test against the DB
-	//hashedPassword, err := bcrypt.GenerateFromPassword([]byte(userLogin.Password), bcrypt.DefaultCost)
-
-	if err != nil {
-		// Handle error during hashing
-		render.Status(r, http.StatusInternalServerError)
-		render.PlainText(w, r, err.Error())
-		return
-	}
-
+	// This is gonna be what's in the DB, to test against the info user sent
 	var DbUser LoginForm
-	err = db.QueryRow("SELECT username, password FROM users WHERE username=$1", userLogin.UserName).Scan(&DbUser.UserName, &DbUser.Password)
+	err = db.QueryRow(`SELECT username, password FROM public."Users" WHERE username=$1`, userLogin.UserName).Scan(&DbUser.UserName, &DbUser.Password)
 
 	if err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			render.Status(r, http.StatusInternalServerError)
+			render.PlainText(w, r, "The username is incorrect")
+			return
+		}
+
 		render.Status(r, http.StatusInternalServerError)
 		render.PlainText(w, r, err.Error())
 		return
 	}
 
-	// Doing hashing against the db..
-	// hashedPassword = fmt.Sprintf("%b", hashedPassword)
+	// Comparing the hashed from the DB to the user sent
+	err = bcrypt.CompareHashAndPassword([]byte(DbUser.Password), []byte(userLogin.Password))
 
-	// if DbUser.Password != hashedPassword {
-	// 	render.Status(r, http.StatusInternalServerError)
-	// 	render.PlainText(w, r, "Invalid username or password")
-	// 	return
-	// }
+	if err != nil {
+		render.JSON(w, r, DbUser)
+		render.JSON(w, r, "The password is incorrect")
+		return
+	}
 
-	// TODO: Implement the logic to login a user
-	render.JSON(w, r, userLogin)
+	// If we got here means that the password is correct. We can create the token
+	tokenString, err := createToken(tokenAuth, userLogin.UserName)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.PlainText(w, r, "Failed to generate token")
+		return
+	}
+
+	// Sending the token
+	render.JSON(w, r, map[string]string{"token": tokenString})
 	render.JSON(w, r, "Login endpoint")
+}
+
+func createToken(tokenAuth *jwtauth.JWTAuth, username string) (string, error) {
+	_, tokenString, err := tokenAuth.Encode(map[string]interface{}{
+		"username": username,
+		"exp":      time.Now().Add(time.Hour * 24).Unix(),
+	})
+	if err != nil {
+		return "", err
+	}
+	return tokenString, nil
 }
 
 func Logout(w http.ResponseWriter, r *http.Request) {

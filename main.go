@@ -3,7 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
+
+	"github.com/go-chi/jwtauth"
+	"github.com/joho/godotenv"
 
 	"github.com/bingKegeta/Knight-Link/internal/routes"
 )
@@ -12,9 +17,23 @@ type App struct {
 	router http.Handler
 }
 
+var tokenAuth *jwtauth.JWTAuth
+
+func init() {
+	// Initialization logic...
+	err := godotenv.Load()
+
+	if err != nil {
+		log.Fatal("Error loading .env file")
+		return
+	}
+
+	tokenAuth = jwtauth.New("HS256", []byte(os.Getenv("SECRET_KEY")), nil)
+}
+
 func New() *App {
 	app := &App{
-		router: routes.Routes(),
+		router: routes.Routes(tokenAuth),
 	}
 	fmt.Println("Server started.")
 
