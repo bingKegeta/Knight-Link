@@ -119,6 +119,13 @@ func GetUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query_string, err := parseSQL("./SQL/api/user/GetById.sql", uid)
+
+	if err != nil {
+		render.Status(r, http.StatusNotFound)
+		render.PlainText(w, r, err.Error())
+		return
+	}
+
 	rows, err := db.Query(query_string)
 
 	if err != nil {
@@ -126,12 +133,13 @@ func GetUser(w http.ResponseWriter, r *http.Request) {
 		render.PlainText(w, r, err.Error())
 		return
 	}
+
 	defer rows.Close()
 
 	var scannedUser User
 
 	for rows.Next() {
-		err = rows.Scan(&scannedUser.UserID, &scannedUser.FirstName, &scannedUser.LastName, &scannedUser.Email, &scannedUser.UserName)
+		err = rows.Scan(&scannedUser.UserID, &scannedUser.FirstName, &scannedUser.LastName, &scannedUser.UserName, &scannedUser.Email)
 		if err != nil {
 			log.Printf("Error scanning row: %v", err)
 			render.PlainText(w, r, "Error scanning row")
@@ -262,8 +270,10 @@ func Login(tokenAuth *jwtauth.JWTAuth, w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Sending the token
-	render.JSON(w, r, map[string]string{"token": tokenString})
-	render.JSON(w, r, "Login endpoint")
+	render.JSON(w, r, map[string]interface{}{
+		"token":   tokenString,
+		"message": "Login successful",
+	})
 }
 
 func createToken(tokenAuth *jwtauth.JWTAuth, username string) (string, error) {

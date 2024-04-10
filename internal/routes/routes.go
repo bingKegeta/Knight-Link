@@ -40,7 +40,7 @@ func Routes(tokenAuth *jwtauth.JWTAuth) *chi.Mux {
 	)
 
 	router.Route("/v1", func(r chi.Router) {
-		r.Mount("/api/users", UserRoutes())
+		r.Mount("/api/users", UserRoutes(tokenAuth))
 		r.Mount("/api/auth", AuthRoutes(tokenAuth))
 		r.Mount("/api/events", EventRoutes())
 		r.Mount("/api/rsos", RSORoutes())
@@ -52,9 +52,16 @@ func Routes(tokenAuth *jwtauth.JWTAuth) *chi.Mux {
 	return router
 }
 
-func UserRoutes() http.Handler {
+func UserRoutes(tokenAuth *jwtauth.JWTAuth) http.Handler {
 	router := chi.NewRouter()
-	router.Get("/{userId}", handlers.GetUser)
+	router.Group(func(r chi.Router) {
+		r.Use(jwtauth.Verifier(tokenAuth))
+		r.Use(jwtauth.Authenticator)
+		r.Get("/{userId}", handlers.GetUser)
+	})
+
+	// Routes without token need.
+	// router.Get("/{userId}", handlers.GetUser)
 	router.Delete("/{userId}", handlers.DeleteUser)
 	router.Put("/{userId}", handlers.UpdateUser)
 	router.Post("/", handlers.CreateUser)
