@@ -26,6 +26,7 @@ require (
 
 require (
 	github.com/ajg/form v1.5.1 // indirect
+	github.com/go-chi/cors v1.2.1
 	github.com/go-chi/jwtauth v1.2.0
 	github.com/joho/godotenv v1.5.1
 	github.com/lib/pq v1.10.9

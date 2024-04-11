@@ -1,28 +1,15 @@
 package routes
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"net/http"
 
 	"github.com/bingKegeta/Knight-Link/internal/handlers"
 	"github.com/go-chi/chi"
-	"github.com/go-chi/jwtauth"
-
 	"github.com/go-chi/chi/middleware"
+	"github.com/go-chi/cors"
+	"github.com/go-chi/jwtauth"
 	"github.com/go-chi/render"
 )
-
-//var tokenAuth *jwtauth.JWTAuth
-
-func generateSecureKey() (string, error) {
-	key := make([]byte, 32) // 256 bits
-	if _, err := rand.Read(key); err != nil {
-		return "", err
-	}
-
-	return base64.StdEncoding.EncodeToString(key), nil
-}
 
 func TokenAuthMiddleware(tokenAuth *jwtauth.JWTAuth, handler func(*jwtauth.JWTAuth, http.ResponseWriter, *http.Request)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -32,7 +19,11 @@ func TokenAuthMiddleware(tokenAuth *jwtauth.JWTAuth, handler func(*jwtauth.JWTAu
 
 func Routes(tokenAuth *jwtauth.JWTAuth) *chi.Mux {
 	router := chi.NewRouter()
-	router.Use(
+	router.Use(cors.Handler(cors.Options{
+		AllowedOrigins: []string{"https://*", "http://*"},
+		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders: []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+	}),
 		render.SetContentType(render.ContentTypeJSON),
 		middleware.Logger,
 		middleware.RedirectSlashes,
@@ -42,7 +33,7 @@ func Routes(tokenAuth *jwtauth.JWTAuth) *chi.Mux {
 	router.Route("/v1", func(r chi.Router) {
 		r.Mount("/api/users", UserRoutes(tokenAuth))
 		r.Mount("/api/auth", AuthRoutes(tokenAuth))
-		r.Mount("/api/events", EventRoutes())
+		r.Mount("/api/events", EventRoutes(tokenAuth))
 		r.Mount("/api/rsos", RSORoutes())
 		r.Mount("/api/unis", UniRoutes())
 		r.Mount("/api/locations", LocationRoutes())
@@ -79,13 +70,19 @@ func AuthRoutes(tokenAuth *jwtauth.JWTAuth) http.Handler {
 	return router
 }
 
-func EventRoutes() http.Handler {
+func EventRoutes(tokenAuth *jwtauth.JWTAuth) http.Handler {
 	router := chi.NewRouter()
-	router.Get("/", handlers.GetAllEvents) // Assuming filtering is implemented in handler
+	router.Group(func(r chi.Router) {
+		r.Use(jwtauth.Verifier(tokenAuth))
+		r.Use(jwtauth.Authenticator)
+		r.Post("/", handlers.CreateEvent)
+	})
+	router.Get("/", handlers.GetAllEvents)
 	router.Get("/{eventId}", handlers.GetEvent)
 	router.Delete("/{eventId}", handlers.DeleteEvent)
 	router.Put("/{eventId}", handlers.UpdateEvent)
-	router.Post("/", handlers.CreateEvent)
+
+	// router.Post("/", handlers.CreateEvent) commented in favor of auth version
 
 	// Add new event-related endpoints here (e.g., attend/unattend event, submit feedback)
 	router.Post("/{eventId}/attend", handlers.AttendEvent)      // Example for attending an event
@@ -96,7 +93,7 @@ func EventRoutes() http.Handler {
 
 func RSORoutes() http.Handler {
 	router := chi.NewRouter()
-	router.Get("/", handlers.GetAllRSOs) // Assuming filtering is implemented in handler
+	router.Get("/", handlers.GetAllRSOs)
 	router.Get("/{rsoId}", handlers.GetRSO)
 	router.Delete("/{rsoId}", handlers.DeleteRSO)
 	router.Put("/{rsoId}", handlers.UpdateRSO)
@@ -110,7 +107,7 @@ func RSORoutes() http.Handler {
 
 func UniRoutes() http.Handler {
 	router := chi.NewRouter()
-	router.Get("/", handlers.GetAllUnis) // Assuming filtering is implemented in handler
+	router.Get("/", handlers.GetAllUnis)
 	router.Get("/{uni_id}", handlers.GetUni)
 	router.Delete("/{uni_id}", handlers.DeleteUni)
 	router.Put("/{uni_id}", handlers.UpdateUniDetails)
