@@ -321,3 +321,6 @@ ADD CONSTRAINT "user" FOREIGN KEY (user_id) REFERENCES public."Users" (user_id) 
 ALTER TABLE public."Event_Feedback"
 ADD CONSTRAINT event FOREIGN KEY (event_id) REFERENCES public."Events" (event_id) MATCH SIMPLE ON DELETE CASCADE ON UPDATE CASCADE;
 -- ddl-end --
+-- Add Online Location for Usage
+INSERT INTO TABLE public."Locations" (address, latitude, longitude)
+VALUES ('Online', 'o', 'o')
