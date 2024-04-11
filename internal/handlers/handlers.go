@@ -207,6 +207,31 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 	// the school
 	user.Uid = 1
 
+	// Check if user exists before creating
+	var userCount int
+	checkUserQuery := `SELECT COUNT(*) FROM public."Users" WHERE username = $1`
+
+	err = db.QueryRow(checkUserQuery, user.UserName).Scan(&userCount)
+
+	switch {
+	case err != nil:
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"Error":   "Error",
+			"message": "Error checking for username" + err.Error(),
+		})
+
+		return
+	case userCount > 0:
+		render.Status(r, http.StatusInternalServerError)
+
+		render.JSON(w, r, map[string]interface{}{
+			"Error":   "Error",
+			"message": "Username already taken",
+		})
+		return
+	}
+
 	query, err := parseSQL("./SQL/api/user/CreateUser.sql", user)
 	if err != nil {
 		render.Status(r, http.StatusInternalServerError)
@@ -221,7 +246,10 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	render.JSON(w, r, "User Created")
+	render.JSON(w, r, map[string]interface{}{
+		"status":  "Success",
+		"message": "User Created",
+	})
 }
 
 func Login(tokenAuth *jwtauth.JWTAuth, w http.ResponseWriter, r *http.Request) {
@@ -241,7 +269,10 @@ func Login(tokenAuth *jwtauth.JWTAuth, w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		render.Status(r, http.StatusInternalServerError)
-		render.PlainText(w, r, err.Error())
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "Error",
+			"message": "Error checking for username" + err.Error(),
+		})
 		return
 	}
 
@@ -250,14 +281,14 @@ func Login(tokenAuth *jwtauth.JWTAuth, w http.ResponseWriter, r *http.Request) {
 	err = db.QueryRow(`SELECT username, password FROM public."Users" WHERE username=$1`, userLogin.UserName).Scan(&DbUser.UserName, &DbUser.Password)
 
 	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
 		if err.Error() == "sql: no rows in result set" {
-			render.Status(r, http.StatusInternalServerError)
-			render.PlainText(w, r, "The username is incorrect")
+			render.JSON(w, r, map[string]interface{}{
+				"status":  "Error",
+				"message": "Incorrect Credentials",
+			})
 			return
 		}
-
-		render.Status(r, http.StatusInternalServerError)
-		render.PlainText(w, r, err.Error())
 		return
 	}
 
@@ -265,8 +296,11 @@ func Login(tokenAuth *jwtauth.JWTAuth, w http.ResponseWriter, r *http.Request) {
 	err = bcrypt.CompareHashAndPassword([]byte(DbUser.Password), []byte(userLogin.Password))
 
 	if err != nil {
-		render.JSON(w, r, DbUser)
-		render.JSON(w, r, "The password is incorrect")
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "Error",
+			"message": "Incorrect Credentials",
+		})
 		return
 	}
 
@@ -275,13 +309,25 @@ func Login(tokenAuth *jwtauth.JWTAuth, w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		render.Status(r, http.StatusInternalServerError)
-		render.PlainText(w, r, "Failed to generate token")
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "Error",
+			"message": "Catastrophic failure, try again",
+		})
 		return
 	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     "token",
+		Value:    tokenString,
+		Expires:  time.Now().Add(24 * time.Hour),
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+	})
 
 	// Sending the token
 	render.JSON(w, r, map[string]interface{}{
-		"token":   tokenString,
+		"status":  "success",
 		"message": "Login successful",
 	})
 }
