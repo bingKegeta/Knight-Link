@@ -72,6 +72,12 @@ type University struct {
 	StudentNo   int    `json:"student_no"`
 }
 
+type Location struct {
+	Address   string `json:"address"`
+	Latitude  string `json:"latitude"`
+	Longitude string `json:"longitude"`
+}
+
 // Function to establish a connection to the database
 func connectToDB() (*sql.DB, error) {
 	err := godotenv.Load()
@@ -367,8 +373,59 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetAllEvents(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement the logic to get all events
-	render.JSON(w, r, "GetAllEvents endpoint")
+	db, err := connectToDB()
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.PlainText(w, r, err.Error())
+		return
+	}
+	defer db.Close()
+
+	rows, err := db.Query(`SELECT e.name, e.tags, e.description, e.start_time, e.end_time, e.uni_id, e.rso_id, e.visibility FROM public."Universities" u`)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "Error getting Universities",
+		})
+		return
+	}
+
+	defer rows.Close()
+
+	var universities []University
+
+	for rows.Next() {
+		var uni University
+		err = rows.Scan(&uni.Name, &uni.Description, &uni.StudentNo)
+
+		if err != nil {
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, map[string]interface{}{
+				"status":  "warning",
+				"message": "Error getting Universities array",
+			})
+			return
+		}
+		universities = append(universities, uni)
+	}
+
+	// If there was an error in the for, it should get here. But I think the
+	// first return should honestly take care of it in any weird case..
+	if err = rows.Err(); err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "Error iterating over rows",
+		})
+		return
+	}
+
+	render.JSON(w, r, map[string]interface{}{
+		"status": "success",
+		"data":   universities,
+	})
 }
 
 func GetEvent(w http.ResponseWriter, r *http.Request) {
@@ -559,6 +616,123 @@ func LeaveUni(w http.ResponseWriter, r *http.Request) {
 	render.JSON(w, r, "LeaveUni endpoint")
 }
 
+func GetAllLocations(w http.ResponseWriter, r *http.Request) {
+	db, err := connectToDB()
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.PlainText(w, r, err.Error())
+		return
+	}
+	defer db.Close()
+
+	rows, err := db.Query(`SELECT l.address, l.latitude, l.longitude FROM public."Locations" l`)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "Error getting Locations",
+		})
+		return
+	}
+
+	defer rows.Close()
+
+	var locations []Location
+
+	for rows.Next() {
+		var location Location
+		err = rows.Scan(&location.Address, &location.Latitude, &location.Longitude)
+
+		if err != nil {
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, map[string]interface{}{
+				"status":  "warning",
+				"message": "Error getting Locations array",
+			})
+			return
+		}
+		locations = append(locations, location)
+	}
+
+	// If there was an error in the for, it should get here. But I think the
+	// first return should honestly take care of it in any weird case..
+	if err = rows.Err(); err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "Error iterating over rows",
+		})
+		return
+	}
+
+	render.JSON(w, r, map[string]interface{}{
+		"status": "success",
+		"data":   locations,
+	})
+}
+
+func CreateLocation(w http.ResponseWriter, r *http.Request) {
+	db, err := connectToDB()
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.PlainText(w, r, err.Error())
+		return
+	}
+	defer db.Close()
+
+	var location Location
+
+	err = json.NewDecoder(r.Body).Decode(&location)
+
+	if err != nil {
+		render.Status(r, http.StatusBadRequest)
+		render.PlainText(w, r, err.Error())
+		return
+	}
+
+	// Check if location exists before creating
+	var locationCount int
+	checkUserQuery := `SELECT COUNT(*) FROM public."Locations" WHERE address = $1`
+
+	err = db.QueryRow(checkUserQuery, location.Address).Scan(&locationCount)
+
+	switch {
+	case err != nil:
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"Error":   "Error",
+			"message": "Error checking for username" + err.Error(),
+		})
+		return
+
+	case locationCount > 0:
+		render.Status(r, http.StatusInternalServerError)
+
+		render.JSON(w, r, map[string]interface{}{
+			"Error":   "Error",
+			"message": "Location already exists",
+		})
+		return
+	}
+
+	query := `INSERT INTO public."Locations" (address, latitude, longitude)
+											VALUES ($1, $2, $3);`
+
+	_, err = db.Exec(query, location.Address, location.Latitude, location.Longitude)
+
+	if err != nil {
+		render.Status(r, http.StatusNotFound)
+		render.PlainText(w, r, err.Error())
+		return
+	}
+
+	render.JSON(w, r, map[string]interface{}{
+		"status":  "Success",
+		"message": "Location Created",
+	})
+}
 func GetLocations(w http.ResponseWriter, r *http.Request) {
 	// TODO: Implement the logic to get all the locations of a user in a given radius
 	render.JSON(w, r, "GetLocations endpoint")

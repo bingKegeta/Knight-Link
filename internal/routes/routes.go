@@ -121,8 +121,8 @@ func UniRoutes() http.Handler {
 
 func LocationRoutes() http.Handler {
 	router := chi.NewRouter()
-	router.Get("/", handlers.GetLocations) // Assuming all visible events in a given radius is shown
-
+	router.Get("/", handlers.GetAllLocations) // Assuming all visible events in a given radius is shown
+	router.Post("/create", handlers.CreateLocation)
 	// Add other routes as required (e.g. add/delete locations)
 	return router
 }
