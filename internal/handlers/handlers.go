@@ -65,6 +65,12 @@ type EventForm struct {
 	RsoId       int    `json:"rso_id"`
 }
 
+type University struct {
+	Name        string `json:"uni_name"`
+	Description string `json:"uni_description"`
+	StudentNo   int    `json:"student_no"`
+}
+
 // Function to establish a connection to the database
 func connectToDB() (*sql.DB, error) {
 	err := godotenv.Load()
@@ -455,8 +461,60 @@ func LeaveRSO(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetAllUnis(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement the logic to get all Universities
-	render.JSON(w, r, "GetAllUnis endpoint")
+
+	db, err := connectToDB()
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.PlainText(w, r, err.Error())
+		return
+	}
+	defer db.Close()
+
+	rows, err := db.Query(`SELECT u.name, u.description, u.student_no FROM public."Universities" u`)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "Error getting Universities",
+		})
+		return
+	}
+
+	defer rows.Close()
+
+	var universities []University
+
+	for rows.Next() {
+		var uni University
+		err = rows.Scan(&uni.Name, &uni.Description, &uni.StudentNo)
+
+		if err != nil {
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, map[string]interface{}{
+				"status":  "warning",
+				"message": "Error getting Universities array",
+			})
+			return
+		}
+		universities = append(universities, uni)
+	}
+
+	// If there was an error in the for, it should get here. But I think the
+	// first return should honestly take care of it in any weird case..
+	if err = rows.Err(); err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "Error iterating over rows",
+		})
+		return
+	}
+
+	render.JSON(w, r, map[string]interface{}{
+		"status": "success",
+		"data":   universities,
+	})
 }
 
 func GetUni(w http.ResponseWriter, r *http.Request) {
