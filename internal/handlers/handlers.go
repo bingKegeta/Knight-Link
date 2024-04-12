@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/jwtauth"
 	"github.com/go-chi/render"
 	"github.com/joho/godotenv"
+	"github.com/lib/pq"
 	_ "github.com/lib/pq"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -56,14 +57,17 @@ type AuthMessage struct {
 }
 
 type EventForm struct {
-	Name        string `json:"event_name"`
-	Description string `json:"event_description"`
-	StartTime   string `json:"start_time"`
-	EndTime     string `json:"end_time"`
-	Location    int    `json:"loc_id"`
-	Visibility  string `json:"visibility"`
-	UniId       int    `json:"uni_id"`
-	RsoId       int    `json:"rso_id"`
+	Name           string `json:"event_name"`
+	Description    string `json:"event_description"`
+	StartTime      string `json:"start_time"`
+	EndTime        string `json:"end_time"`
+	Location       string `json:"loc_name"`
+	Visibility     string `json:"visibility"`
+	UniversityName string `json:"uni_name"`
+	RsoName        string `json:"rso_name"`
+	UniId          int    `json:"uni_id"`
+	RsoId          int    `json:"rso_id"`
+	LocId          int
 }
 
 type University struct {
@@ -462,26 +466,162 @@ func CreateEvent(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		render.Status(r, http.StatusInternalServerError)
 		render.JSON(w, r, map[string]interface{}{
-			"err":     err.Error(),
+			"status":  "warning",
 			"message": "There was an error on the submitted form",
 		})
 		return
 	}
 
-	// No need to add uni_id or rso_id, since that can get added later or not at all
+	// In case there is RSO
+	query := `SELECT r.rso_id from public."RSOs" r WHERE r.name = $1`
 
-	query := `INSERT INTO public."Events" (name, event_description, start_time, end_time, loc_id, visibility) VALUES ($1, $2, $3, $4, $5, $6)`
+	// Get rso_id
+	if event.RsoName != "" {
+		// Get rso_id
+		err = db.QueryRow(query, event.RsoName).Scan(&event.RsoId)
+		if err != nil {
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, map[string]interface{}{
+				"status":  "warning",
+				"message": "There was an error getting RSO ID",
+			})
+			return
+		}
+	}
 
-	_, err = db.Exec(query, event.Name, event.Description)
+	// Now the uni_id
+	query = `SELECT u.uni_id FROM public."Universities" u WHERE u.name = $1`
+	err = db.QueryRow(query, event.UniversityName).Scan(&event.UniId)
 
-	render.JSON(w, r, event)
-	// TODO: Implement the logic to create an event
-	render.JSON(w, r, "CreateEvent endpoint")
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "There was an error getting University ID " + err.Error(),
+		})
+		return
+	}
+
+	// Last, loc_id
+	query = `SELECT l.loc_id FROM public."Locations" l WHERE l.address = $1`
+
+	err = db.QueryRow(query, event.Location).Scan(&event.LocId)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "There was an error getting Location ID " + err.Error(),
+		})
+		return
+	}
+
+	var insertQuery string
+	var args []interface{}
+	if event.RsoId != 0 {
+		insertQuery = `INSERT INTO public."Events" (name, description, start_time, end_time, loc_id, uni_id, rso_id, visibility) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+		args = append(args, event.Name, event.Description, event.StartTime, event.EndTime, event.LocId, event.UniId, event.RsoId, event.Visibility)
+	} else {
+		insertQuery = `INSERT INTO public."Events" (name, description, start_time, end_time, loc_id, uni_id, visibility) VALUES ($1, $2, $3, $4, $5, $6, $7)`
+		args = append(args, event.Name, event.Description, event.StartTime, event.EndTime, event.LocId, event.UniId, event.Visibility)
+	}
+
+	_, err = db.Exec(insertQuery, args...)
+
+	if err != nil {
+		if pgerr, ok := err.(*pq.Error); ok { // Check if it is a pq.Error
+			switch pgerr.Code {
+			case "23505": // Unique violation
+				render.Status(r, http.StatusConflict)
+				render.JSON(w, r, map[string]interface{}{
+					"status":  "error",
+					"message": "An event with the same name already exists.",
+				})
+			case "P0001": // Custom error code from your PostgreSQL function
+				render.Status(r, http.StatusConflict)
+				render.JSON(w, r, map[string]interface{}{
+					"status":  "error",
+					"message": pgerr.Message, // or a custom message based on your error handling
+				})
+			default:
+				render.Status(r, http.StatusInternalServerError)
+				render.JSON(w, r, map[string]interface{}{
+					"status":  "error",
+					"message": "Internal Server Error: " + pgerr.Message,
+				})
+			}
+			return
+		}
+		// If it's not a pq.Error, handle it as an unknown error
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "Unknown error occurred: " + err.Error(),
+		})
+		return
+	}
+
+	render.JSON(w, r, map[string]interface{}{
+		"status":  "Success",
+		"message": "Event Created",
+	})
 }
 
 func GetAllRSOs(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement the logic to get all RSOs
-	render.JSON(w, r, "GetAllRSOs endpoint")
+	db, err := connectToDB()
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.PlainText(w, r, err.Error())
+		return
+	}
+	defer db.Close()
+
+	rows, err := db.Query(`SELECT r.name FROM public."RSOs" r`)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "Error getting RSOs",
+		})
+		return
+	}
+
+	defer rows.Close()
+
+	var rsos []string
+
+	for rows.Next() {
+		var rso string
+		err = rows.Scan(&rso)
+
+		if err != nil {
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, map[string]interface{}{
+				"status":  "warning",
+				"message": "Error getting Locations array",
+			})
+			return
+		}
+		rsos = append(rsos, rso)
+	}
+
+	// If there was an error in the for, it should get here. But I think the
+	// first return should honestly take care of it in any weird case..
+	if err = rows.Err(); err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "Error iterating over rows",
+		})
+		return
+	}
+
+	render.JSON(w, r, map[string]interface{}{
+		"status": "success",
+		"data":   rsos,
+	})
 }
 
 func GetRSO(w http.ResponseWriter, r *http.Request) {
@@ -724,14 +864,18 @@ func CreateLocation(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		render.Status(r, http.StatusNotFound)
-		render.PlainText(w, r, err.Error())
+		render.JSON(w, r, map[string]interface{}{
+			"Error":   "Error",
+			"message": "Error creating event " + err.Error(),
+		})
 		return
 	}
 
 	render.JSON(w, r, map[string]interface{}{
 		"status":  "Success",
-		"message": "Location Created",
+		"message": "Event Created",
 	})
+
 }
 func GetLocations(w http.ResponseWriter, r *http.Request) {
 	// TODO: Implement the logic to get all the locations of a user in a given radius
