@@ -22,7 +22,7 @@ CREATE TABLE public."Universities" (
     uni_id serial NOT NULL,
     name varchar(255) NOT NULL,
     description text,
-    student_no integer,
+    student_no integer DEFAULT 0,
     picture bytea,
     CONSTRAINT "Universities_pk" PRIMARY KEY (uni_id),
     CONSTRAINT uni_ques UNIQUE (name)
