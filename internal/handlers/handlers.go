@@ -35,13 +35,14 @@ type LoginForm struct {
 }
 
 type UserNoId struct {
-	FirstName string `json:"first_name"`
-	LastName  string `json:"last_name"`
-	UserName  string `json:"username"`
-	Password  string `json:"password"`
-	Uid       int    `json:"uni_id"`
-	Email     string `json:"email"`
-	UserType  string `json:"user_type"`
+	FirstName  string `json:"first_name"`
+	LastName   string `json:"last_name"`
+	UserName   string `json:"username"`
+	Password   string `json:"password"`
+	University string `json:"university"`
+	Email      string `json:"email"`
+	UserType   string `json:"user_type"`
+	Uid        int
 }
 
 type SQLParseToType struct {
@@ -209,9 +210,19 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	// Every user is by default an student, so assign it here
 	user.UserType = "student"
-	// This should be selected in the creation logic or something. This selects
-	// the school
-	user.Uid = 1
+
+	// Query the DB to get the Uid
+	checkUid := `SELECT u.uni_id FROM public."Universities" u WHERE name = $1`
+	err = db.QueryRow(checkUid, user.University).Scan(&user.Uid)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"Error":   "Error",
+			"message": "Error checking university" + " " + err.Error(),
+		})
+		return
+	}
 
 	// Check if user exists before creating
 	var userCount int
@@ -226,8 +237,8 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 			"Error":   "Error",
 			"message": "Error checking for username" + err.Error(),
 		})
-
 		return
+
 	case userCount > 0:
 		render.Status(r, http.StatusInternalServerError)
 
@@ -238,14 +249,15 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query, err := parseSQL("./SQL/api/user/CreateUser.sql", user)
-	if err != nil {
-		render.Status(r, http.StatusInternalServerError)
-		render.PlainText(w, r, err.Error())
-		return
-	}
+	query := `INSERT INTO public."Users" (first_name, last_name, username, "password",
+        									uni_id,
+											email,
+											user_type)
+											VALUES ($1, $2, $3, $4, $5, $6, $7);`
 
-	_, err = db.Exec(query)
+	_, err = db.Exec(query, user.FirstName, user.LastName, user.UserName,
+		user.Password, user.Uid, user.Email, user.UserType)
+
 	if err != nil {
 		render.Status(r, http.StatusNotFound)
 		render.PlainText(w, r, err.Error())
