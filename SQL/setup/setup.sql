@@ -84,19 +84,19 @@ CREATE TYPE public.categories AS ENUM ('social', 'fundraising', 'tech talk', 'ac
 -- object: public."Events" | type: TABLE --
 -- DROP TABLE IF EXISTS public."Events" CASCADE;
 CREATE TABLE public."Events" (
-    event_id serial NOT NULL,
-    name varchar(255) NOT NULL,
-    tags public.categories [],
-    description text,
-    start_time timestamp with time zone NOT NULL,
-    end_time timestamp with time zone NOT NULL,
-    loc_id serial,
-    contact_phone varchar(15),
-    contact_email varchar(255),
-    visibility public.event NOT NULL,
-    uni_id serial,
-    rso_id serial,
-    superadmin_approval boolean DEFAULT FALSE,
+    event_id serial4 NOT NULL,
+    "name" varchar(255) NOT NULL,
+    tags public."_categories" NULL,
+    description text NULL,
+    start_time timestamptz NOT NULL,
+    end_time timestamptz NOT NULL,
+    loc_id int4 NULL,
+    contact_phone varchar(15) NULL,
+    contact_email varchar(255) NULL,
+    visibility public."event" NOT NULL,
+    uni_id int4 NULL,
+    rso_id int4 NULL,
+    superadmin_approval bool DEFAULT false NULL,
     CONSTRAINT "Events_pk" PRIMARY KEY (event_id)
 );
 -- ddl-end --
@@ -263,15 +263,14 @@ SET NULL ON UPDATE CASCADE;
 -- object: rso | type: CONSTRAINT --
 -- ALTER TABLE public."Events" DROP CONSTRAINT IF EXISTS rso CASCADE;
 ALTER TABLE public."Events"
-ADD CONSTRAINT rso FOREIGN KEY (rso_id) REFERENCES public."RSOs" (rso_id) MATCH SIMPLE
-ON DELETE SET NULL ON UPDATE CASCADE;
+ADD CONSTRAINT rso FOREIGN KEY (rso_id) REFERENCES public."RSOs" (rso_id) MATCH SIMPLE ON DELETE
+SET NULL ON UPDATE CASCADE;
 -- ddl-end --
 -- object: loc | type: CONSTRAINT --
 -- ALTER TABLE public."Events" DROP CONSTRAINT IF EXISTS loc CASCADE;
 ALTER TABLE public."Events"
-ADD CONSTRAINT loc FOREIGN KEY (loc_id) REFERENCES public."Locations" (loc_id) MATCH SIMPLE
-ON DELETE SET NULL
-ON UPDATE CASCADE;
+ADD CONSTRAINT loc FOREIGN KEY (loc_id) REFERENCES public."Locations" (loc_id) MATCH SIMPLE ON DELETE
+SET NULL ON UPDATE CASCADE;
 -- ddl-end --
 -- object: "user" | type: CONSTRAINT --
 -- ALTER TABLE public."User_RSO_Membership" DROP CONSTRAINT IF EXISTS "user" CASCADE;
