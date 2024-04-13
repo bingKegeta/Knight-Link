@@ -57,7 +57,8 @@ type AuthMessage struct {
 }
 
 type EventForm struct {
-	Name           string `json:"event_name"`
+	Name string `json:"event_name"`
+	// Tags           []string `json:"tags"`
 	Description    string `json:"event_description"`
 	StartTime      string `json:"start_time"`
 	EndTime        string `json:"end_time"`
@@ -208,8 +209,30 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 	// Set the password to the newly hashed password
 	user.Password = string(hashedPassword)
 
+	check := 0
+	checkStdNo := `SELECT EXISTS (
+		SELECT 1
+		FROM students
+		WHERE student_no = 0
+		AND university_name = $1
+	  ); `
+	err = db.QueryRow(checkStdNo, user.University).Scan((&check))
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"Error":   "Error",
+			"message": "Error checking university" + " " + err.Error(),
+		})
+		return
+	}
+
+	if check == 1 {
+		// do the assignment of user_type here
+	}
+
 	// Every user is by default an student, so assign it here
-	user.UserType = "student"
+	user.UserType = "admin"
 
 	// Query the DB to get the Uid
 	checkUid := `SELECT u.uni_id FROM public."Universities" u WHERE name = $1`
@@ -375,34 +398,34 @@ func GetAllEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
-	rows, err := db.Query(`SELECT e.name, e.tags, e.description, e.start_time, e.end_time, e.uni_id, e.rso_id, e.visibility FROM public."Universities" u`)
+	rows, err := db.Query(`SELECT e.name, e.tags, e.description, e.start_time, e.end_time, e.uni_id, e.rso_id, e.visibility FROM public."Events" e`)
 
 	if err != nil {
 		render.Status(r, http.StatusInternalServerError)
 		render.JSON(w, r, map[string]interface{}{
 			"status":  "warning",
-			"message": "Error getting Universities",
+			"message": "Error getting Events",
 		})
 		return
 	}
 
 	defer rows.Close()
 
-	var universities []University
+	var events []EventForm
 
 	for rows.Next() {
-		var uni University
-		err = rows.Scan(&uni.Name, &uni.Description, &uni.StudentNo)
+		var event EventForm
+		err = rows.Scan(&event.Name, &event.Tags, &event.Description, &event.StartTime, &event.EndTime, &event.UniId, &event.RsoId, &event.Visibility)
 
 		if err != nil {
 			render.Status(r, http.StatusInternalServerError)
 			render.JSON(w, r, map[string]interface{}{
 				"status":  "warning",
-				"message": "Error getting Universities array",
+				"message": "Error getting Events array",
 			})
 			return
 		}
-		universities = append(universities, uni)
+		events = append(events, event)
 	}
 
 	// If there was an error in the for, it should get here. But I think the
@@ -418,7 +441,7 @@ func GetAllEvents(w http.ResponseWriter, r *http.Request) {
 
 	render.JSON(w, r, map[string]interface{}{
 		"status": "success",
-		"data":   universities,
+		"data":   events,
 	})
 }
 
