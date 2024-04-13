@@ -98,9 +98,10 @@ type Location struct {
 }
 
 type FeedbackForm struct {
-	Username string `json:"username"`
-	Type     string `json:"type"`
-	Rating   int    `json:"rating"`
+	Username  string `json:"username"`
+	Eventname string `json:"event_name"`
+	Type      string `json:"type"`
+	Feedback  string `json:"feedback"`
 }
 
 type RsoForm struct {
@@ -246,12 +247,14 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 	// Set the password to the newly hashed password
 	user.Password = string(hashedPassword)
 
-	check := 0
-	// Actually.
-	checkStdNo := `SELECT u.student_no FROM public."Universities" u WHERE name = $1`
-
-	err = db.QueryRow(checkStdNo, user.University).Scan((&check))
-
+	check := false
+	checkStdNo := `SELECT EXISTS (
+		SELECT 1
+		FROM "Universities"
+		WHERE student_no = 0
+		AND name = $1
+	  ); `
+	rows, err := db.Query(checkStdNo, user.University)
 	if err != nil {
 		render.Status(r, http.StatusInternalServerError)
 		render.JSON(w, r, map[string]interface{}{
@@ -261,12 +264,25 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if check == 0 {
-		user.UserType = "admin"
+	rows.Next()
+	err = rows.Scan(&check)
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"Error":   "Error",
+			"message": "Error scanning UNISQL" + " " + err.Error(),
+		})
+		return
+	}
+
+	if check {
+		// do the assignment of user_type here
+		user.UserType = "student"
 	} else {
-		// Every user is by default an student, so assign it here
 		user.UserType = "student"
 	}
+
+	// Every user is by default an student, so assign it here
 
 	// Query the DB to get the Uid
 	checkUid := `SELECT u.uni_id FROM public."Universities" u WHERE name = $1`
@@ -568,6 +584,8 @@ func CreateEvent(w http.ResponseWriter, r *http.Request) {
 	//
 	var event EventForm
 
+	x := r.Body
+	fmt.Println(x)
 	err = json.NewDecoder(r.Body).Decode(&event)
 
 	if err != nil {
@@ -859,10 +877,162 @@ func CreateFeedback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//query := `INSERT INTO public."Event_Feedback" (user_id, event_id, "content", "timestamp") VALUES ($1, $2, $3, CURRENT_TIMESTAMP)`
+	var user_id int
+	query := `SELECT user_id FROM "Users" WHERE username = $1`
+	err = db.QueryRow(query, feedback.Username).Scan(&user_id)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": ("There is an error with the username" + err.Error()),
+		})
+		return
+	}
+
+	var event_id int
+	query = `SELECT event_id FROM "Events" WHERE name = $1`
+	err = db.QueryRow(query, feedback.Eventname).Scan(&event_id)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "There is an error with the event name",
+		})
+		return
+	}
+
+	if feedback.Type == "comment" {
+		query := `INSERT INTO public."Event_Feedback" (user_id, event_id, "content", "feedback_type", "timestamp") 
+				VALUES ($1, $2, $3, 'comment', CURRENT_TIMESTAMP)`
+
+		_, err := db.Exec(query, user_id, event_id, feedback.Feedback)
+		if err != nil {
+			render.Status(r, http.StatusNotFound)
+			render.PlainText(w, r, err.Error())
+			return
+		}
+
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "Success",
+			"message": "Comment Added",
+		})
+	} else {
+		query := `INSERT INTO "Event_Feedback" (user_id, event_id, "rating", "feedback_type", "timestamp")
+					VALUES ($1, $2, $3, 'rating', CURRENT_TIMESTAMP)`
+		_, err := db.Exec(query, user_id, event_id, feedback.Feedback)
+		if err != nil {
+			render.Status(r, http.StatusNotFound)
+			render.PlainText(w, r, err.Error())
+			return
+		}
+
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "Success",
+			"message": "Rating Added",
+		})
+	}
 
 	// TODO: Implement the logic to create comment and rating from a user to an event
-	render.JSON(w, r, "CreateFeedback endpoint")
+	// render.JSON(w, r, "CreateFeedback endpoint")
+}
+
+func GetFeedback(w http.ResponseWriter, r *http.Request) {
+	db, err := connectToDB()
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "There was an error connecting to the DB " + err.Error(),
+		})
+		return
+	}
+
+	defer db.Close()
+
+	event_name := r.Header.Get("event_name")
+	var event_id int
+
+	err = db.QueryRow(`SELECT event_id FROM "Events" WHERE name = $1;`, event_name).Scan(&event_id)
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "Error getting Event Id",
+		})
+		return
+	}
+
+	query := `SELECT user_id, feedback_type, content, rating, timestamp FROM "Event_Feedback" WHERE event_id = $1;`
+	rows, err := db.Query(query, event_id)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "Error getting Feedback",
+		})
+		return
+	}
+
+	var feedback []FeedbackForm
+
+	for rows.Next() {
+		var user_id int
+		var fb_type string
+		var comment sql.NullString
+		var rating sql.NullString
+		var timestamp string
+		var username string
+
+		err = rows.Scan(&user_id, &fb_type, &comment, &rating, &timestamp)
+		if err != nil {
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, map[string]interface{}{
+				"status":  "warning",
+				"message": "Error getting Feedback array",
+			})
+			return
+		}
+
+		err = db.QueryRow(`SELECT username FROM "Users" WHERE user_id = $1;`, user_id).Scan(&username)
+		if err != nil {
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, map[string]interface{}{
+				"status":  "warning",
+				"message": "Error getting username",
+			})
+			return
+		}
+
+		var fb FeedbackForm
+		fb.Username = username
+		fb.Eventname = event_name
+		fb.Type = fb_type
+		if fb_type == "rating" {
+			fb.Feedback = rating.String
+		} else {
+			fb.Feedback = comment.String
+		}
+
+		feedback = append(feedback, fb)
+	}
+
+	if err = rows.Err(); err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "Error iterating over rows",
+		})
+		return
+	}
+
+	render.JSON(w, r, map[string]interface{}{
+		"status": "success",
+		"data":   feedback,
+	})
 }
 
 func JoinRSO(w http.ResponseWriter, r *http.Request) {
