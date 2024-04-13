@@ -93,13 +93,13 @@ func EventRoutes(tokenAuth *jwtauth.JWTAuth) http.Handler {
 func RSORoutes() http.Handler {
 	router := chi.NewRouter()
 	router.Get("/", handlers.GetAllRSOs)
+	router.Post("/", handlers.CreateRSO)
 	router.Get("/{rsoId}", handlers.GetRSO)
 	router.Delete("/{rsoId}", handlers.DeleteRSO)
 	router.Put("/{rsoId}", handlers.UpdateRSO)
-	router.Post("/", handlers.CreateRSO)
 
 	// Add new RSO-related endpoints here (e.g., join/leave RSO)
-	router.Post("/{rsoId}/join", handlers.JoinRSO)    // Example for joining an RSO
+	router.Post("/join", handlers.JoinRSO)            // Example for joining an RSO
 	router.Delete("/{rsoId}/join", handlers.LeaveRSO) // Example for leaving an RSO
 	return router
 }

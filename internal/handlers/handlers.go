@@ -115,10 +115,15 @@ type RsoForm struct {
 	Sfour         string `json:"s4_name"`
 
 	AdminId      int
-	DateCreated  string
+	DateCreated  string `json:"date_created"`
 	RsoId        int
 	UniId        int
 	StudentEmail string
+}
+
+type RsoJoin struct {
+	Username string `json:"username"`
+	RsoName  string `json:"rso_name"`
 }
 
 // Function to establish a connection to the database
@@ -247,14 +252,12 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 	// Set the password to the newly hashed password
 	user.Password = string(hashedPassword)
 
-	check := false
-	checkStdNo := `SELECT EXISTS (
-		SELECT 1
-		FROM "Universities"
-		WHERE student_no = 0
-		AND name = $1
-	  ); `
-	rows, err := db.Query(checkStdNo, user.University)
+	check := 0
+	// Actually.
+	checkStdNo := `SELECT u.student_no FROM public."Universities" u WHERE name = $1`
+
+	err = db.QueryRow(checkStdNo, user.University).Scan((&check))
+
 	if err != nil {
 		render.Status(r, http.StatusInternalServerError)
 		render.JSON(w, r, map[string]interface{}{
@@ -264,25 +267,12 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows.Next()
-	err = rows.Scan(&check)
-	if err != nil {
-		render.Status(r, http.StatusInternalServerError)
-		render.JSON(w, r, map[string]interface{}{
-			"Error":   "Error",
-			"message": "Error scanning UNISQL" + " " + err.Error(),
-		})
-		return
-	}
-
-	if check {
-		// do the assignment of user_type here
-		user.UserType = "student"
+	if check == 0 {
+		user.UserType = "admin"
 	} else {
+		// Every user is by default an student, so assign it here
 		user.UserType = "student"
 	}
-
-	// Every user is by default an student, so assign it here
 
 	// Query the DB to get the Uid
 	checkUid := `SELECT u.uni_id FROM public."Universities" u WHERE name = $1`
@@ -584,8 +574,6 @@ func CreateEvent(w http.ResponseWriter, r *http.Request) {
 	//
 	var event EventForm
 
-	x := r.Body
-	fmt.Println(x)
 	err = json.NewDecoder(r.Body).Decode(&event)
 
 	if err != nil {
@@ -702,7 +690,7 @@ func GetAllRSOs(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
-	rows, err := db.Query(`SELECT r.name FROM public."RSOs" r`)
+	rows, err := db.Query(`SELECT r.name, r.description, r.date_created FROM public."RSOs" r`)
 
 	if err != nil {
 		render.Status(r, http.StatusInternalServerError)
@@ -715,11 +703,11 @@ func GetAllRSOs(w http.ResponseWriter, r *http.Request) {
 
 	defer rows.Close()
 
-	var rsos []string
+	var rsos []RsoForm
 
 	for rows.Next() {
-		var rso string
-		err = rows.Scan(&rso)
+		var rso RsoForm
+		err = rows.Scan(&rso.Name, &rso.Description, &rso.DateCreated)
 
 		if err != nil {
 			render.Status(r, http.StatusInternalServerError)
@@ -877,6 +865,7 @@ func CreateFeedback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	render.JSON(w, r, "CreateFeedback endpoint")
 	var user_id int
 	query := `SELECT user_id FROM "Users" WHERE username = $1`
 	err = db.QueryRow(query, feedback.Username).Scan(&user_id)
@@ -1036,8 +1025,107 @@ func GetFeedback(w http.ResponseWriter, r *http.Request) {
 }
 
 func JoinRSO(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement the logic to allow user to join an RSO
-	render.JSON(w, r, "JoinRSO endpoint")
+	db, err := connectToDB()
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "Error connecting to Database",
+		})
+		return
+	}
+	defer db.Close()
+
+	var rsoJoin RsoJoin
+
+	err = json.NewDecoder(r.Body).Decode(&rsoJoin)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "There was an error parsing the data",
+		})
+		return
+	}
+
+	// get rso_id
+	var rso_id string
+	query := `SELECT rso_id FROM public."RSOs" WHERE name = $1`
+	err = db.QueryRow(query, rsoJoin.RsoName).Scan(&rso_id)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "There was an error getting the RSO ID",
+		})
+		return
+	}
+
+	var userId int
+
+	// Get the userid off the username
+	query = `SELECT user_id FROM public."Users" WHERE username = $1`
+	err = db.QueryRow(query, rsoJoin.Username).Scan(&userId)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			render.Status(r, http.StatusNotFound)
+			render.JSON(w, r, map[string]interface{}{
+				// This should never ever happen. But added just as precaution
+				"status":  "warning",
+				"message": "User not found",
+			})
+			return
+		} else {
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, map[string]interface{}{
+				"status":  "error",
+				"message": "Database error: " + err.Error(),
+			})
+			return
+		}
+	}
+
+	// Check if the user is already a member of the RSO
+	var exists bool
+	query = `SELECT EXISTS(SELECT 1 FROM public."User_RSO_Membership" WHERE user_id = $1 AND rso_id = $2)`
+	err = db.QueryRow(query, userId, rso_id).Scan(&exists)
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "error",
+			"message": "Database error: " + err.Error(),
+		})
+		return
+	}
+
+	if exists {
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "You are already in this RSO",
+		})
+		return
+	}
+
+	// If not a member, insert the user into the RSO membership table
+	query = `INSERT INTO public."User_RSO_Membership" (user_id, rso_id) VALUES ($1, $2)`
+	_, err = db.Exec(query, userId, rso_id)
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "Error adding user to RSO: " + err.Error(),
+		})
+		return
+	}
+
+	render.Status(r, http.StatusAccepted)
+	render.JSON(w, r, map[string]interface{}{
+		"status": "success",
+		"data":   "User added to RSO group",
+	})
 }
 
 func LeaveRSO(w http.ResponseWriter, r *http.Request) {
