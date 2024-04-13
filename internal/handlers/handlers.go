@@ -58,6 +58,21 @@ type AuthMessage struct {
 type EventForm struct {
 	Name string `json:"event_name"`
 	// Tags           []string `json:"tags"`
+	Description    string        `json:"event_description"`
+	StartTime      string        `json:"start_time"`
+	EndTime        string        `json:"end_time"`
+	Location       string        `json:"loc_name"`
+	Visibility     string        `json:"visibility"`
+	UniversityName string        `json:"uni_name"`
+	RsoName        string        `json:"rso_name"`
+	UniId          int           `json:"uni_id"`
+	RsoId          sql.NullInt32 `json:"rso_id"`
+	LocId          sql.NullInt32
+}
+
+type DbEventForm struct {
+	Name string `json:"event_name"`
+	// Tags           []string `json:"tags"`
 	Description    sql.NullString `json:"event_description"`
 	StartTime      string         `json:"start_time"`
 	EndTime        string         `json:"end_time"`
@@ -69,7 +84,6 @@ type EventForm struct {
 	RsoId          sql.NullInt32  `json:"rso_id"`
 	LocId          sql.NullInt32
 }
-
 type University struct {
 	Name        string `json:"uni_name"`
 	Description string `json:"uni_description"`
@@ -86,6 +100,17 @@ type FeedbackForm struct {
 	Username string `json:"username"`
 	Type     string `json:"type"`
 	Rating   int    `json:"rating"`
+}
+
+type RsoForm struct {
+	Name         string `json:"rso_name"`
+	Description  string `json:"description"`
+	StudentName  string `json:"student_name"`
+	DateCreated  string
+	RsoId        int
+	UniId        int
+	AdminId      int
+	StudentEmail string
 }
 
 // Function to establish a connection to the database
@@ -215,12 +240,9 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 	user.Password = string(hashedPassword)
 
 	check := 0
-	checkStdNo := `SELECT EXISTS (
-		SELECT 1
-		FROM students
-		WHERE student_no = 0
-		AND university_name = $1
-	  ); `
+	// Actually.
+	checkStdNo := `SELECT u.student_no FROM public."Universities" u WHERE name = $1`
+
 	err = db.QueryRow(checkStdNo, user.University).Scan((&check))
 
 	if err != nil {
@@ -232,12 +254,12 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if check == 1 {
-		// do the assignment of user_type here
+	if check == 0 {
+		user.UserType = "admin"
+	} else {
+		// Every user is by default an student, so assign it here
+		user.UserType = "student"
 	}
-
-	// Every user is by default an student, so assign it here
-	user.UserType = "admin"
 
 	// Query the DB to get the Uid
 	checkUid := `SELECT u.uni_id FROM public."Universities" u WHERE name = $1`
@@ -285,6 +307,67 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	_, err = db.Exec(query, user.FirstName, user.LastName, user.UserName,
 		user.Password, user.Uid, user.Email, user.UserType)
+
+	if err != nil {
+		render.Status(r, http.StatusNotFound)
+		render.PlainText(w, r, err.Error())
+		return
+	}
+
+	render.JSON(w, r, map[string]interface{}{
+		"status":  "Success",
+		"message": "User Created",
+	})
+}
+
+func GetStudents(w http.ResponseWriter, r *http.Request) {
+	db, err := connectToDB()
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.PlainText(w, r, err.Error())
+		return
+	}
+	defer db.Close()
+
+	decoder := json.NewDecoder(r.Body)
+
+	var rsoForm RsoForm
+
+	err = decoder.Decode(&rsoForm)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "Error",
+			"message": "Error parsing form data " + err.Error(),
+		})
+		return
+	}
+
+	// Get the UniID of the student creating it, and also the AdminID which would
+	// be the sid
+
+	query := `SELECT u.user_id, u.uni_id, u.email FROM public."Users" u WHERE u.username = $1`
+
+	err = db.QueryRow(query, rsoForm.StudentName).Scan(&rsoForm.AdminId, &rsoForm.UniId, &rsoForm.StudentEmail)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "Error",
+			"message": "Error trying to get crucial data",
+		})
+		return
+	}
+
+	query = `INSERT INTO public."Users" (first_name, last_name, username, "password",
+        									uni_id,
+											email,
+											user_type)
+											VALUES ($1, $2, $3, $4, $5, $6, $7);`
+
+	_, err = db.Exec(query)
 
 	if err != nil {
 		render.Status(r, http.StatusNotFound)
@@ -426,10 +509,10 @@ func GetAllEvents(w http.ResponseWriter, r *http.Request) {
 
 	defer rows.Close()
 
-	var events []EventForm
+	var events []DbEventForm
 
 	for rows.Next() {
-		var event EventForm
+		var event DbEventForm
 		err = rows.Scan(&event.Name, &event.Description, &event.StartTime, &event.EndTime, &event.UniId, &event.RsoId, &event.Visibility)
 
 		if err != nil {
@@ -663,8 +746,64 @@ func UpdateRSO(w http.ResponseWriter, r *http.Request) {
 }
 
 func CreateRSO(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement the logic to create an RSO
-	render.JSON(w, r, "CreateRSO endpoint")
+	db, err := connectToDB()
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.PlainText(w, r, err.Error())
+		return
+	}
+	defer db.Close()
+
+	decoder := json.NewDecoder(r.Body)
+
+	var rsoForm RsoForm
+
+	err = decoder.Decode(&rsoForm)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "Error",
+			"message": "Error parsing form data " + err.Error(),
+		})
+		return
+	}
+
+	// Get the UniID of the student creating it, and also the AdminID which would
+	// be the sid
+	query := `SELECT u.user_id, u.uni_id, u.email FROM public."Users" u WHERE u.username = $1`
+
+	err = db.QueryRow(query, rsoForm.StudentName).Scan(&rsoForm.AdminId, &rsoForm.UniId, &rsoForm.StudentEmail)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "Error",
+			"message": "Error trying to get crucial data",
+		})
+		return
+	}
+
+	query = `INSERT INTO public."Users" (first_name, last_name, username, "password",
+        									uni_id,
+											email,
+											user_type)
+											VALUES ($1, $2, $3, $4, $5, $6, $7);`
+
+	_, err = db.Exec(query)
+
+	if err != nil {
+		render.Status(r, http.StatusNotFound)
+		render.PlainText(w, r, err.Error())
+		return
+	}
+
+	render.JSON(w, r, map[string]interface{}{
+		"status":  "Success",
+		"message": "User Created",
+	})
+
 }
 
 func AttendEvent(w http.ResponseWriter, r *http.Request) {
