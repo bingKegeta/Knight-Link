@@ -15,7 +15,6 @@ import (
 	"github.com/go-chi/render"
 	"github.com/joho/godotenv"
 	"github.com/lib/pq"
-	_ "github.com/lib/pq"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -59,16 +58,16 @@ type AuthMessage struct {
 type EventForm struct {
 	Name string `json:"event_name"`
 	// Tags           []string `json:"tags"`
-	Description    string `json:"event_description"`
-	StartTime      string `json:"start_time"`
-	EndTime        string `json:"end_time"`
-	Location       string `json:"loc_name"`
-	Visibility     string `json:"visibility"`
-	UniversityName string `json:"uni_name"`
-	RsoName        string `json:"rso_name"`
-	UniId          int    `json:"uni_id"`
-	RsoId          int    `json:"rso_id"`
-	LocId          int
+	Description    sql.NullString `json:"event_description"`
+	StartTime      string         `json:"start_time"`
+	EndTime        string         `json:"end_time"`
+	Location       string         `json:"loc_name"`
+	Visibility     string         `json:"visibility"`
+	UniversityName string         `json:"uni_name"`
+	RsoName        string         `json:"rso_name"`
+	UniId          int            `json:"uni_id"`
+	RsoId          sql.NullInt32  `json:"rso_id"`
+	LocId          sql.NullInt32
 }
 
 type University struct {
@@ -81,6 +80,12 @@ type Location struct {
 	Address   string `json:"address"`
 	Latitude  string `json:"latitude"`
 	Longitude string `json:"longitude"`
+}
+
+type FeedbackForm struct {
+	Username string `json:"username"`
+	Type     string `json:"type"`
+	Rating   int    `json:"rating"`
 }
 
 // Function to establish a connection to the database
@@ -356,6 +361,7 @@ func Login(tokenAuth *jwtauth.JWTAuth, w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     "token",
 		Value:    tokenString,
@@ -364,6 +370,15 @@ func Login(tokenAuth *jwtauth.JWTAuth, w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteStrictMode,
+	})
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "username",
+		Value:    userLogin.UserName,
+		Expires:  time.Now().Add(24 * time.Hour),
+		Path:     "/",
+		Secure:   true,                    // Only send over HTTPS
+		SameSite: http.SameSiteStrictMode, // Prevent CSRF attacks
 	})
 
 	// Sending the token
@@ -398,7 +413,7 @@ func GetAllEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
-	rows, err := db.Query(`SELECT e.name, e.tags, e.description, e.start_time, e.end_time, e.uni_id, e.rso_id, e.visibility FROM public."Events" e`)
+	rows, err := db.Query(`SELECT e.name, e.description, e.start_time, e.end_time, e.uni_id, e.rso_id, e.visibility FROM public."Events" e`)
 
 	if err != nil {
 		render.Status(r, http.StatusInternalServerError)
@@ -415,7 +430,7 @@ func GetAllEvents(w http.ResponseWriter, r *http.Request) {
 
 	for rows.Next() {
 		var event EventForm
-		err = rows.Scan(&event.Name, &event.Tags, &event.Description, &event.StartTime, &event.EndTime, &event.UniId, &event.RsoId, &event.Visibility)
+		err = rows.Scan(&event.Name, &event.Description, &event.StartTime, &event.EndTime, &event.UniId, &event.RsoId, &event.Visibility)
 
 		if err != nil {
 			render.Status(r, http.StatusInternalServerError)
@@ -526,7 +541,7 @@ func CreateEvent(w http.ResponseWriter, r *http.Request) {
 
 	var insertQuery string
 	var args []interface{}
-	if event.RsoId != 0 {
+	if event.RsoId.Int32 != 0 {
 		insertQuery = `INSERT INTO public."Events" (name, description, start_time, end_time, loc_id, uni_id, rso_id, visibility) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
 		args = append(args, event.Name, event.Description, event.StartTime, event.EndTime, event.LocId, event.UniId, event.RsoId, event.Visibility)
 	} else {
@@ -537,7 +552,7 @@ func CreateEvent(w http.ResponseWriter, r *http.Request) {
 	_, err = db.Exec(insertQuery, args...)
 
 	if err != nil {
-		if pgerr, ok := err.(*pq.Error); ok { // Check if it is a pq.Error
+		if pgerr, ok := err.(*pq.Error); ok {
 			switch pgerr.Code {
 			case "23505": // Unique violation
 				render.Status(r, http.StatusConflict)
@@ -545,11 +560,11 @@ func CreateEvent(w http.ResponseWriter, r *http.Request) {
 					"status":  "error",
 					"message": "An event with the same name already exists.",
 				})
-			case "P0001": // Custom error code from your PostgreSQL function
+			case "P0001":
 				render.Status(r, http.StatusConflict)
 				render.JSON(w, r, map[string]interface{}{
 					"status":  "error",
-					"message": pgerr.Message, // or a custom message based on your error handling
+					"message": pgerr.Message,
 				})
 			default:
 				render.Status(r, http.StatusInternalServerError)
@@ -663,6 +678,34 @@ func UnattendEvent(w http.ResponseWriter, r *http.Request) {
 }
 
 func CreateFeedback(w http.ResponseWriter, r *http.Request) {
+	db, err := connectToDB()
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "There was an error connecting to the DB " + err.Error(),
+		})
+		return
+	}
+
+	defer db.Close()
+
+	var feedback FeedbackForm
+
+	err = json.NewDecoder(r.Body).Decode(&feedback)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "There was an error on the submitted comment",
+		})
+		return
+	}
+
+	//query := `INSERT INTO public."Event_Feedback" (user_id, event_id, "content", "timestamp") VALUES ($1, $2, $3, CURRENT_TIMESTAMP)`
+
 	// TODO: Implement the logic to create comment and rating from a user to an event
 	render.JSON(w, r, "CreateFeedback endpoint")
 }
@@ -733,6 +776,19 @@ func GetAllUnis(w http.ResponseWriter, r *http.Request) {
 		"data":   universities,
 	})
 }
+
+// func GetAllComments(w http.ResponseWriter, r *http.Request) {
+// 	db, err := connectToDB()
+// 	if err != nil {
+// 		render.Status(r, http.StatusInternalServerError)
+// 		render.PlainText(w, r, err.Error())
+// 		return
+// 	}
+// 	defer db.Close()
+
+// 	rows, err := db.Query(`SELECT u.name, u.description, u.student_no FROM public."Universities" u`)
+
+// }
 
 func UpdateUniDetails(w http.ResponseWriter, r *http.Request) {
 	// TODO: Implement the logic to update the details of a specific university
