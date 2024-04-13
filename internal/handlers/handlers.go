@@ -84,6 +84,7 @@ type DbEventForm struct {
 	RsoId          sql.NullInt32  `json:"rso_id"`
 	LocId          sql.NullInt32
 }
+
 type University struct {
 	Name        string `json:"uni_name"`
 	Description string `json:"uni_description"`
@@ -103,13 +104,19 @@ type FeedbackForm struct {
 }
 
 type RsoForm struct {
-	Name         string `json:"rso_name"`
-	Description  string `json:"description"`
-	StudentName  string `json:"student_name"`
+	Name          string `json:"rso_name"`
+	Description   string `json:"description"`
+	AdminName     string `json:"am_name"`
+	PromotionUser string `json:"promotion_value"`
+	Sone          string `json:"s1_name"`
+	Stwo          string `json:"s2_name"`
+	Sthree        string `json:"s3_name"`
+	Sfour         string `json:"s4_name"`
+
+	AdminId      int
 	DateCreated  string
 	RsoId        int
 	UniId        int
-	AdminId      int
 	StudentEmail string
 }
 
@@ -320,7 +327,7 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func GetStudents(w http.ResponseWriter, r *http.Request) {
+func GetAllStudents(w http.ResponseWriter, r *http.Request) {
 	db, err := connectToDB()
 	if err != nil {
 		render.Status(r, http.StatusInternalServerError)
@@ -329,55 +336,49 @@ func GetStudents(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
-	decoder := json.NewDecoder(r.Body)
-
-	var rsoForm RsoForm
-
-	err = decoder.Decode(&rsoForm)
+	rows, err := db.Query(`SELECT u.username FROM public."Users" u`)
 
 	if err != nil {
 		render.Status(r, http.StatusInternalServerError)
 		render.JSON(w, r, map[string]interface{}{
-			"status":  "Error",
-			"message": "Error parsing form data " + err.Error(),
+			"status":  "warning",
+			"message": "Error getting Students",
 		})
 		return
 	}
 
-	// Get the UniID of the student creating it, and also the AdminID which would
-	// be the sid
+	defer rows.Close()
+	var students []string
 
-	query := `SELECT u.user_id, u.uni_id, u.email FROM public."Users" u WHERE u.username = $1`
+	for rows.Next() {
+		var user string
+		err = rows.Scan(&user)
 
-	err = db.QueryRow(query, rsoForm.StudentName).Scan(&rsoForm.AdminId, &rsoForm.UniId, &rsoForm.StudentEmail)
+		if err != nil {
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, map[string]interface{}{
+				"status":  "warning",
+				"message": "Error getting Locations array",
+			})
+			return
+		}
+		students = append(students, user)
+	}
 
-	if err != nil {
+	// If there was an error in the for, it should get here. But I think the
+	// first return should honestly take care of it in any weird case..
+	if err = rows.Err(); err != nil {
 		render.Status(r, http.StatusInternalServerError)
-
 		render.JSON(w, r, map[string]interface{}{
-			"status":  "Error",
-			"message": "Error trying to get crucial data",
+			"status":  "warning",
+			"message": "Error iterating over rows",
 		})
-		return
-	}
-
-	query = `INSERT INTO public."Users" (first_name, last_name, username, "password",
-        									uni_id,
-											email,
-											user_type)
-											VALUES ($1, $2, $3, $4, $5, $6, $7);`
-
-	_, err = db.Exec(query)
-
-	if err != nil {
-		render.Status(r, http.StatusNotFound)
-		render.PlainText(w, r, err.Error())
 		return
 	}
 
 	render.JSON(w, r, map[string]interface{}{
-		"status":  "Success",
-		"message": "User Created",
+		"status": "success",
+		"data":   students,
 	})
 }
 
@@ -755,11 +756,8 @@ func CreateRSO(w http.ResponseWriter, r *http.Request) {
 	defer db.Close()
 
 	decoder := json.NewDecoder(r.Body)
-
 	var rsoForm RsoForm
-
 	err = decoder.Decode(&rsoForm)
-
 	if err != nil {
 		render.Status(r, http.StatusInternalServerError)
 		render.JSON(w, r, map[string]interface{}{
@@ -769,41 +767,59 @@ func CreateRSO(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get the UniID of the student creating it, and also the AdminID which would
-	// be the sid
-	query := `SELECT u.user_id, u.uni_id, u.email FROM public."Users" u WHERE u.username = $1`
-
-	err = db.QueryRow(query, rsoForm.StudentName).Scan(&rsoForm.AdminId, &rsoForm.UniId, &rsoForm.StudentEmail)
-
-	if err != nil {
-		render.Status(r, http.StatusInternalServerError)
-
+	// Get the user details based on promotion value
+	usernames := map[string]string{"1": rsoForm.Sone, "2": rsoForm.Stwo, "3": rsoForm.Sthree, "4": rsoForm.Sfour}
+	username, exists := usernames[rsoForm.PromotionUser]
+	if !exists {
+		render.Status(r, http.StatusBadRequest)
 		render.JSON(w, r, map[string]interface{}{
 			"status":  "Error",
-			"message": "Error trying to get crucial data",
+			"message": "Invalid promotion user selection",
 		})
 		return
 	}
 
-	query = `INSERT INTO public."Users" (first_name, last_name, username, "password",
-        									uni_id,
-											email,
-											user_type)
-											VALUES ($1, $2, $3, $4, $5, $6, $7);`
-
-	_, err = db.Exec(query)
-
+	query := `SELECT user_id, uni_id, email FROM public."Users" WHERE username = $1`
+	err = db.QueryRow(query, username).Scan(&rsoForm.AdminId, &rsoForm.UniId, &rsoForm.StudentEmail)
 	if err != nil {
-		render.Status(r, http.StatusNotFound)
-		render.PlainText(w, r, err.Error())
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "Error",
+			"message": "Error fetching user details " + err.Error(),
+		})
 		return
+	}
+
+	// Create RSO record
+	query = `INSERT INTO public."RSOs" (name, description, uni_id, admin_id, date_created)
+			 VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP) RETURNING rso_id;`
+	err = db.QueryRow(query, rsoForm.Name, rsoForm.Description, rsoForm.UniId, rsoForm.AdminId).Scan(&rsoForm.RsoId)
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "Error",
+			"message": "Failed to create RSO " + err.Error(),
+		})
+		return
+	}
+
+	// Add all users to the membership table
+	usernamesToInsert := []string{rsoForm.Sone, rsoForm.Stwo, rsoForm.Sthree, rsoForm.Sfour}
+	for _, uname := range usernamesToInsert {
+		query = `INSERT INTO public."User_RSO_Membership" (user_id, rso_id)
+				 SELECT user_id, $1 FROM public."Users" WHERE username = $2;`
+		_, err = db.Exec(query, rsoForm.RsoId, uname)
+		if err != nil {
+			render.Status(r, http.StatusInternalServerError)
+			render.PlainText(w, r, "Error adding user to RSO: "+err.Error())
+			return
+		}
 	}
 
 	render.JSON(w, r, map[string]interface{}{
 		"status":  "Success",
-		"message": "User Created",
+		"message": "RSO created successfully and users added.",
 	})
-
 }
 
 func AttendEvent(w http.ResponseWriter, r *http.Request) {

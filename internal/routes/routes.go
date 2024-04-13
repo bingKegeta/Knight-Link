@@ -54,6 +54,7 @@ func UserRoutes(tokenAuth *jwtauth.JWTAuth) http.Handler {
 	// Routes without token need.
 	// router.Get("/{userId}", handlers.GetUser)
 	router.Post("/", handlers.CreateUser)
+	router.Get("/get_students", handlers.GetAllStudents)
 
 	// Add new user-related endpoints here (e.g., update profile picture)
 	return router
