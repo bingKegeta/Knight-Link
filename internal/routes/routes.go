@@ -53,8 +53,6 @@ func UserRoutes(tokenAuth *jwtauth.JWTAuth) http.Handler {
 
 	// Routes without token need.
 	// router.Get("/{userId}", handlers.GetUser)
-	router.Delete("/{userId}", handlers.DeleteUser)
-	router.Put("/{userId}", handlers.UpdateUser)
 	router.Post("/", handlers.CreateUser)
 
 	// Add new user-related endpoints here (e.g., update profile picture)
@@ -78,7 +76,6 @@ func EventRoutes(tokenAuth *jwtauth.JWTAuth) http.Handler {
 		r.Post("/", handlers.CreateEvent)
 	})
 	router.Get("/", handlers.GetAllEvents)
-	router.Get("/{eventId}", handlers.GetEvent)
 	router.Delete("/{eventId}", handlers.DeleteEvent)
 	router.Put("/{eventId}", handlers.UpdateEvent)
 
@@ -108,14 +105,9 @@ func RSORoutes() http.Handler {
 func UniRoutes() http.Handler {
 	router := chi.NewRouter()
 	router.Get("/", handlers.GetAllUnis)
-	router.Get("/{uni_id}", handlers.GetUni)
-	router.Delete("/{uni_id}", handlers.DeleteUni)
 	router.Put("/{uni_id}", handlers.UpdateUniDetails)
-	router.Post("/{uni_id}", handlers.CreateUni)
-
 	// Add new Uni-related endpoints here (e.g. join/leave Uni)
-	router.Post("/{uni_id}/join", handlers.JoinUni)
-	router.Delete("/{uni_id}/join", handlers.LeaveUni)
+
 	return router
 }
 

@@ -179,16 +179,6 @@ func GetUser(w http.ResponseWriter, r *http.Request) {
 	render.JSON(w, r, scannedUser)
 }
 
-func DeleteUser(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement the logic to delete a user
-	render.JSON(w, r, "DeleteUser endpoint")
-}
-
-func UpdateUser(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement the logic to update a user
-	render.JSON(w, r, "UpdateUser endpoint")
-}
-
 func CreateUser(w http.ResponseWriter, r *http.Request) {
 	db, err := connectToDB()
 	if err != nil {
@@ -430,11 +420,6 @@ func GetAllEvents(w http.ResponseWriter, r *http.Request) {
 		"status": "success",
 		"data":   universities,
 	})
-}
-
-func GetEvent(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement the logic to get an event
-	render.JSON(w, r, "GetEvent endpoint")
 }
 
 func DeleteEvent(w http.ResponseWriter, r *http.Request) {
@@ -726,34 +711,9 @@ func GetAllUnis(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func GetUni(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement the logic to get a specific university by id(?)
-	render.JSON(w, r, "GetUni endpoint")
-}
-
-func DeleteUni(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement the logic to delete a University
-	render.JSON(w, r, "DeleteUni endpoint")
-}
-
 func UpdateUniDetails(w http.ResponseWriter, r *http.Request) {
 	// TODO: Implement the logic to update the details of a specific university
 	render.JSON(w, r, "UpdateUniDetails endpoint")
-}
-
-func CreateUni(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement the logic to create a university
-	render.JSON(w, r, "CreateUni endpoint")
-}
-
-func JoinUni(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement the logic to allow a user to join a university
-	render.JSON(w, r, "JoinUni endpoint")
-}
-
-func LeaveUni(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement the logic to allow a user to leave a university
-	render.JSON(w, r, "LeaveUni endpoint")
 }
 
 func GetAllLocations(w http.ResponseWriter, r *http.Request) {
