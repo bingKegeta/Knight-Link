@@ -64,6 +64,7 @@ func AuthRoutes(tokenAuth *jwtauth.JWTAuth) http.Handler {
 	router := chi.NewRouter()
 	router.Post("/login", TokenAuthMiddleware(tokenAuth, handlers.Login))
 	router.Post("/logout", handlers.Logout)
+	router.Get("/permissions", handlers.CheckPermissions)
 
 	// Add new auth-related endpoints here (e.g., refresh token)
 	return router
@@ -78,6 +79,8 @@ func EventRoutes(tokenAuth *jwtauth.JWTAuth) http.Handler {
 	})
 
 	router.Get("/", handlers.GetAllEvents)
+
+	router.Get("/user", handlers.GetUserEvents)
 	router.Delete("/{eventId}", handlers.DeleteEvent)
 	router.Put("/{eventId}", handlers.UpdateEvent)
 	router.Put("/leave", handlers.LeaveEvent)

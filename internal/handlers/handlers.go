@@ -517,19 +517,48 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 
 func GetAllEvents(w http.ResponseWriter, r *http.Request) {
 	username := r.URL.Query().Get("username")
-	if username != "" {
-		GetUserEvents(w, r, username)
-		return
+
+	if username == "" {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "No username provided",
+		})
 	}
+
+	// We got a username, get the user_id, and check public events,
+	// private events of the user's attending university,
+	// and events of RSOs the user is a member of
+	// and then just return those + everything that is public
 	db, err := connectToDB()
 	if err != nil {
 		render.Status(r, http.StatusInternalServerError)
 		render.PlainText(w, r, err.Error())
 		return
 	}
+
 	defer db.Close()
 
-	rows, err := db.Query(`SELECT e.name, e.description, e.start_time, e.end_time, e.uni_id, e.rso_id, e.visibility FROM public."Events" e`)
+	var rows *sql.Rows
+
+	var userId int
+	err = db.QueryRow(`SELECT user_id FROM public."Users" WHERE username = $1`, username).Scan(&userId)
+
+	if err != nil {
+		render.Status(r, http.StatusNotFound)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "User not found",
+		})
+		return
+	}
+
+	query := `SELECT e.name, e.description, e.start_time, e.end_time, e.uni_id, e.rso_id, e.visibility FROM public."Events" e
+	WHERE e.visibility = 'public' OR
+		  e.uni_id = (SELECT uni_id FROM public."Users" WHERE user_id = $1) OR
+		  e.rso_id IN (SELECT rso_id FROM public."User_RSO_Membership" WHERE user_id = $1)`
+
+	rows, err = db.Query(query, userId)
 
 	if err != nil {
 		render.Status(r, http.StatusInternalServerError)
@@ -576,7 +605,18 @@ func GetAllEvents(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func GetUserEvents(w http.ResponseWriter, r *http.Request, username string) {
+func GetUserEvents(w http.ResponseWriter, r *http.Request) {
+	username := r.URL.Query().Get("username")
+
+	if username == "" {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "No username provided",
+		})
+		return
+	}
+
 	db, err := connectToDB()
 
 	if err != nil {
@@ -765,6 +805,58 @@ func JoinEvent(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func CheckPermissions(w http.ResponseWriter, r *http.Request) {
+	username := r.URL.Query().Get("username")
+
+	if username == "" {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "No username provided",
+		})
+		return
+	}
+
+	db, err := connectToDB()
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "There was an error connecting to the DB",
+		})
+		return
+	}
+
+	var user_type string
+	query := `SELECT user_type FROM public."Users" WHERE username = $1`
+	err = db.QueryRow(query, username).Scan(&user_type)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			render.Status(r, http.StatusNotFound)
+			render.JSON(w, r, map[string]interface{}{
+				// This should never ever happen. But added just as precaution
+				"status":  "warning",
+				"message": "User not found",
+			})
+			return
+		} else {
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, map[string]interface{}{
+				"status":  "error",
+				"message": "Database error: " + err.Error(),
+			})
+			return
+		}
+	}
+
+	render.Status(r, http.StatusAccepted)
+	render.JSON(w, r, map[string]interface{}{
+		"status":  "success",
+		"message": user_type,
+	})
+
+}
 func LeaveEvent(w http.ResponseWriter, r *http.Request) {
 	db, err := connectToDB()
 
