@@ -76,6 +76,7 @@ func EventRoutes(tokenAuth *jwtauth.JWTAuth) http.Handler {
 		r.Use(jwtauth.Authenticator)
 		r.Post("/", handlers.CreateEvent)
 	})
+
 	router.Get("/", handlers.GetAllEvents)
 	router.Delete("/{eventId}", handlers.DeleteEvent)
 	router.Put("/{eventId}", handlers.UpdateEvent)

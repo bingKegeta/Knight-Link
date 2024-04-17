@@ -70,6 +70,14 @@ type EventForm struct {
 	LocId          sql.NullInt32
 }
 
+type UserEventForm struct {
+	Name        string         `json:"event_name"`
+	Description sql.NullString `json:"event_description"`
+	StartTime   string         `json:"start_time"`
+	EndTime     string         `json:"end_time"`
+	UniId       int            `json:"uni_id"`
+}
+
 type DbEventForm struct {
 	Name string `json:"event_name"`
 	// Tags           []string `json:"tags"`
@@ -132,6 +140,11 @@ type RsoForm struct {
 type RsoJoin struct {
 	Username string `json:"username"`
 	RsoName  string `json:"rso_name"`
+}
+
+type EventJoin struct {
+	Username  string `json:"username"`
+	Eventname string `json:"event_name"`
 }
 
 // Function to establish a connection to the database
@@ -503,6 +516,11 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetAllEvents(w http.ResponseWriter, r *http.Request) {
+	username := r.URL.Query().Get("username")
+	if username != "" {
+		GetUserEvents(w, r, username)
+		return
+	}
 	db, err := connectToDB()
 	if err != nil {
 		render.Status(r, http.StatusInternalServerError)
@@ -543,6 +561,106 @@ func GetAllEvents(w http.ResponseWriter, r *http.Request) {
 
 	// If there was an error in the for, it should get here. But I think the
 	// first return should honestly take care of it in any weird case..
+	if err = rows.Err(); err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "Error iterating over rows",
+		})
+		return
+	}
+
+	render.JSON(w, r, map[string]interface{}{
+		"status": "success",
+		"data":   events,
+	})
+}
+
+func GetUserEvents(w http.ResponseWriter, r *http.Request, username string) {
+	db, err := connectToDB()
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "There was an error connecting to the DB",
+		})
+		return
+	}
+
+	// Get the current user based on the token (in this case username cookie).
+	// var eventJoin EventJoin
+
+	// err = json.NewDecoder(r.Body).Decode(&eventJoin)
+
+	// if err != nil {
+	// 	render.Status(r, http.StatusInternalServerError)
+	// 	render.JSON(w, r, map[string]interface{}{
+	// 		"status":  "warning",
+	// 		"message": "There was an error parsing the data",
+	// 	})
+	// 	return
+	// }
+
+	// get user_id
+	var userId int
+	query := `SELECT user_id FROM public."Users" WHERE username = $1`
+	err = db.QueryRow(query, username).Scan(&userId)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			render.Status(r, http.StatusNotFound)
+			render.JSON(w, r, map[string]interface{}{
+				// This should never ever happen. But added just as precaution
+				"status":  "warning",
+				"message": "User not found",
+			})
+			return
+		} else {
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, map[string]interface{}{
+				"status":  "error",
+				"message": "Database error: " + err.Error(),
+			})
+			return
+		}
+	}
+
+	query = `select e."name", e."description", e."start_time", e."end_time", e."uni_id" 
+			from public."Events" e 
+			left join user_event_membership uem 
+			on 
+			e.event_id = uem.event_id where uem.user_id = $1`
+
+	rows, err := db.Query(query, userId)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "Error getting Events.",
+		})
+		return
+	}
+
+	defer rows.Close()
+
+	var events []UserEventForm
+
+	for rows.Next() {
+		var event UserEventForm
+		err = rows.Scan(&event.Name, &event.Description, &event.StartTime, &event.EndTime, &event.UniId)
+
+		if err != nil {
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, map[string]interface{}{
+				"status":  "warning",
+				"message": "Error getting Events array",
+			})
+			return
+		}
+		events = append(events, event)
+	}
+
 	if err = rows.Err(); err != nil {
 		render.Status(r, http.StatusInternalServerError)
 		render.JSON(w, r, map[string]interface{}{

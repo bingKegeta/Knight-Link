@@ -141,6 +141,21 @@ CREATE TABLE public."Event_Feedback" (
     CONSTRAINT fb_type CHECK (feedback_type IN ('comment', 'rating')),
     CONSTRAINT "Event_Feedback_pk" PRIMARY KEY (fb_id)
 );
+
+CREATE TABLE public.user_event_membership (
+    user_id int NOT NULL,
+    event_id int NOT NULL,
+    UNIQUE(user_id, event_id),
+
+    CONSTRAINT fk_user
+        FOREIGN KEY (user_id)
+        REFERENCES public."Users" (user_id),  
+
+    CONSTRAINT fk_event
+        FOREIGN KEY (event_id)
+        REFERENCES public."Events" (event_id)
+);
+
 -- ddl-end --
 -- object: public.validate_non_overlapping_events | type: FUNCTION --
 -- DROP FUNCTION IF EXISTS public.validate_non_overlapping_events() CASCADE;
