@@ -80,11 +80,12 @@ func EventRoutes(tokenAuth *jwtauth.JWTAuth) http.Handler {
 	router.Get("/", handlers.GetAllEvents)
 	router.Delete("/{eventId}", handlers.DeleteEvent)
 	router.Put("/{eventId}", handlers.UpdateEvent)
+	router.Put("/leave", handlers.LeaveEvent)
 
 	// router.Post("/", handlers.CreateEvent) commented in favor of auth version
 
 	// Add new event-related endpoints here (e.g., attend/unattend event, submit feedback)
-	router.Post("/attend", handlers.AttendEvent)      // Example for attending an event
+	router.Post("/join", handlers.JoinEvent)
 	router.Delete("/attend", handlers.UnattendEvent)  // Example for unattending an event
 	router.Post("/feedback", handlers.CreateFeedback) // Example for submitting feedback
 	router.Get("/feedback", handlers.GetFeedback)

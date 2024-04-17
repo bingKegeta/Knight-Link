@@ -588,21 +588,6 @@ func GetUserEvents(w http.ResponseWriter, r *http.Request, username string) {
 		return
 	}
 
-	// Get the current user based on the token (in this case username cookie).
-	// var eventJoin EventJoin
-
-	// err = json.NewDecoder(r.Body).Decode(&eventJoin)
-
-	// if err != nil {
-	// 	render.Status(r, http.StatusInternalServerError)
-	// 	render.JSON(w, r, map[string]interface{}{
-	// 		"status":  "warning",
-	// 		"message": "There was an error parsing the data",
-	// 	})
-	// 	return
-	// }
-
-	// get user_id
 	var userId int
 	query := `SELECT user_id FROM public."Users" WHERE username = $1`
 	err = db.QueryRow(query, username).Scan(&userId)
@@ -673,6 +658,215 @@ func GetUserEvents(w http.ResponseWriter, r *http.Request, username string) {
 	render.JSON(w, r, map[string]interface{}{
 		"status": "success",
 		"data":   events,
+	})
+}
+
+func JoinEvent(w http.ResponseWriter, r *http.Request) {
+	db, err := connectToDB()
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "Error connecting to Database",
+		})
+		return
+	}
+	defer db.Close()
+
+	var eventJoin EventJoin
+
+	err = json.NewDecoder(r.Body).Decode(&eventJoin)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "There was an error parsing the data",
+		})
+		return
+	}
+
+	// get event_id
+	var event_id string
+	query := `SELECT event_id FROM public."Events" WHERE name = $1`
+	err = db.QueryRow(query, eventJoin.Eventname).Scan(&event_id)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "There was an error getting the Event ID",
+		})
+		return
+	}
+
+	var userId int
+
+	// Get the userid off the username
+	query = `SELECT user_id FROM public."Users" WHERE username = $1`
+	err = db.QueryRow(query, eventJoin.Username).Scan(&userId)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			render.Status(r, http.StatusNotFound)
+			render.JSON(w, r, map[string]interface{}{
+				// This should never ever happen. But added just as precaution
+				"status":  "warning",
+				"message": "User not found",
+			})
+			return
+		} else {
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, map[string]interface{}{
+				"status":  "error",
+				"message": "Database error: " + err.Error(),
+			})
+			return
+		}
+	}
+
+	// Check if the user is already a member of the RSO
+	var exists bool
+	query = `SELECT EXISTS(SELECT 1 FROM public."user_event_membership" WHERE user_id = $1 AND event_id = $2)`
+	err = db.QueryRow(query, userId, event_id).Scan(&exists)
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "error",
+			"message": "Database error: " + err.Error(),
+		})
+		return
+	}
+
+	if exists {
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "You are already part of this event",
+		})
+		return
+	}
+
+	// If not a member, insert the user into the RSO membership table
+	query = `INSERT INTO public."user_event_membership" (user_id, event_id) VALUES ($1, $2)`
+	_, err = db.Exec(query, userId, event_id)
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "Error adding user to the event: " + err.Error(),
+		})
+		return
+	}
+
+	render.Status(r, http.StatusAccepted)
+	render.JSON(w, r, map[string]interface{}{
+		"status": "success",
+		"data":   "User added to the event",
+	})
+}
+
+func LeaveEvent(w http.ResponseWriter, r *http.Request) {
+	db, err := connectToDB()
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "Error connecting to Database",
+		})
+		return
+	}
+	defer db.Close()
+
+	var eventJoin EventJoin
+
+	err = json.NewDecoder(r.Body).Decode(&eventJoin)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "There was an error parsing the data",
+		})
+		return
+	}
+
+	// get event_id
+	var event_id string
+	query := `SELECT event_id FROM public."Events" WHERE name = $1`
+	err = db.QueryRow(query, eventJoin.Eventname).Scan(&event_id)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "There was an error getting the Event ID",
+		})
+		return
+	}
+
+	var userId int
+
+	// Get the userid off the username
+	query = `SELECT user_id FROM public."Users" WHERE username = $1`
+	err = db.QueryRow(query, eventJoin.Username).Scan(&userId)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			render.Status(r, http.StatusNotFound)
+			render.JSON(w, r, map[string]interface{}{
+				// This should never ever happen. But added just as precaution
+				"status":  "warning",
+				"message": "User not found",
+			})
+			return
+		} else {
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, map[string]interface{}{
+				"status":  "error",
+				"message": "Database error: " + err.Error(),
+			})
+			return
+		}
+	}
+
+	// Check if the user is already a member of the RSO
+	var exists bool
+	query = `SELECT EXISTS(SELECT 1 FROM public."user_event_membership" WHERE user_id = $1 AND event_id = $2)`
+	err = db.QueryRow(query, userId, event_id).Scan(&exists)
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "error",
+			"message": "Database error: " + err.Error(),
+		})
+		return
+	}
+
+	if !exists {
+		render.Status(r, http.StatusAccepted)
+		render.JSON(w, r, map[string]interface{}{
+			"status": "warning",
+			"data":   "User is not part of the event.",
+		})
+	}
+
+	// If not a member, insert the user into the user event membership table
+	query = `DELETE FROM public."user_event_membership" WHERE user_id = $1 AND event_id = $2`
+	_, err = db.Exec(query, userId, event_id)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "Error deleting user from event " + err.Error(),
+		})
+		return
+	}
+
+	render.Status(r, http.StatusAccepted)
+	render.JSON(w, r, map[string]interface{}{
+		"status": "success",
+		"data":   "User not longer in the event",
 	})
 }
 
