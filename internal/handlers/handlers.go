@@ -104,6 +104,14 @@ type FeedbackForm struct {
 	Feedback  string `json:"feedback"`
 }
 
+type FeedbackReturn struct {
+	Username  string `json:"username"`
+	Eventname string `json:"event_name"`
+	Type      string `json:"type"`
+	Feedback  string `json:"feedback"`
+	Timestamp string `json:"timestamp"`
+}
+
 type RsoForm struct {
 	Name          string `json:"rso_name"`
 	Description   string `json:"description"`
@@ -966,7 +974,7 @@ func GetFeedback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var feedback []FeedbackForm
+	var feedback []FeedbackReturn
 
 	for rows.Next() {
 		var user_id int
@@ -996,10 +1004,11 @@ func GetFeedback(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		var fb FeedbackForm
+		var fb FeedbackReturn
 		fb.Username = username
 		fb.Eventname = event_name
 		fb.Type = fb_type
+		fb.Timestamp = timestamp
 		if fb_type == "rating" {
 			fb.Feedback = rating.String
 		} else {
