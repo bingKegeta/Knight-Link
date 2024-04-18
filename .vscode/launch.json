@@ -9,7 +9,14 @@
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "./cmd/Knight-Link"
+            "program": "./"
+        },
+        {
+            "name": "Misc Tests",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "./tests/",
         }
     ]
 }
