@@ -1149,6 +1149,166 @@ func GetAllRSOs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func GetUserRSOs(w http.ResponseWriter, r *http.Request) {
+	db, err := connectToDB()
+	username := r.URL.Query().Get("username")
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.PlainText(w, r, err.Error())
+		return
+	}
+	defer db.Close()
+
+	var user_id int
+	query := `SELECT user_id FROM public."Users" WHERE username = $1`
+
+	err = db.QueryRow(query, username).Scan(&user_id)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "Error getting RSOs",
+		})
+		return
+	}
+
+	rows, err := db.Query(`select r.name, r.description, r.date_created
+						FROM public."RSOs" r 
+						left join public."User_RSO_Membership" urm 
+						on 
+						r.rso_id = urm.rso_id where urm.user_id = $1`, user_id)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "Error getting RSOs",
+		})
+		return
+	}
+
+	defer rows.Close()
+
+	var rsos []RsoForm
+
+	for rows.Next() {
+		var rso RsoForm
+		err = rows.Scan(&rso.Name, &rso.Description, &rso.DateCreated)
+
+		if err != nil {
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, map[string]interface{}{
+				"status":  "warning",
+				"message": "Error getting Locations array",
+			})
+			return
+		}
+		rsos = append(rsos, rso)
+	}
+
+	// If there was an error in the for, it should get here. But I think the
+	// first return should honestly take care of it in any weird case..
+	if err = rows.Err(); err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "Error iterating over rows",
+		})
+		return
+	}
+
+	render.JSON(w, r, map[string]interface{}{
+		"status": "success",
+		"data":   rsos,
+	})
+}
+
+func LeaveRSO(w http.ResponseWriter, r *http.Request) {
+	db, err := connectToDB()
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "Error connecting to Database",
+		})
+		return
+	}
+	defer db.Close()
+
+	var rsoLeave RsoJoin
+
+	err = json.NewDecoder(r.Body).Decode(&rsoLeave)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "There was an error parsing the data",
+		})
+		return
+	}
+
+	// get event_id
+	var rso_id string
+	query := `SELECT rso_id FROM public."RSOs" WHERE name = $1`
+	err = db.QueryRow(query, rsoLeave.RsoName).Scan(&rso_id)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "There was an error getting the RSO ID",
+		})
+		return
+	}
+
+	var userId int
+
+	// Get the userid off the username
+	query = `SELECT user_id FROM public."Users" WHERE username = $1`
+	err = db.QueryRow(query, rsoLeave.Username).Scan(&userId)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			render.Status(r, http.StatusNotFound)
+			render.JSON(w, r, map[string]interface{}{
+				// This should never ever happen. But added just as precaution
+				"status":  "warning",
+				"message": "User not found",
+			})
+			return
+		} else {
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, map[string]interface{}{
+				"status":  "error",
+				"message": "Database error: " + err.Error(),
+			})
+			return
+		}
+	}
+
+	// If not a member, insert the user into the user event membership table
+	query = `DELETE FROM public."User_RSO_Membership" WHERE user_id = $1 AND rso_id = $2`
+	_, err = db.Exec(query, userId, rso_id)
+
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]interface{}{
+			"status":  "warning",
+			"message": "Error deleting user from event " + err.Error(),
+		})
+		return
+	}
+
+	render.Status(r, http.StatusAccepted)
+	render.JSON(w, r, map[string]interface{}{
+		"status": "success",
+		"data":   "User not longer in the RSO",
+	})
+}
+
 func GetRSO(w http.ResponseWriter, r *http.Request) {
 	// TODO: Implement the logic to get an RSO
 	render.JSON(w, r, "GetRSO endpoint")
@@ -1378,6 +1538,8 @@ func GetFeedback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	defer rows.Close()
+
 	var feedback []FeedbackReturn
 
 	for rows.Next() {
@@ -1539,11 +1701,6 @@ func JoinRSO(w http.ResponseWriter, r *http.Request) {
 		"status": "success",
 		"data":   "User added to RSO group",
 	})
-}
-
-func LeaveRSO(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement the logic to allow user to leave an RSO
-	render.JSON(w, r, "LeaveRSO endpoint")
 }
 
 func GetAllUnis(w http.ResponseWriter, r *http.Request) {

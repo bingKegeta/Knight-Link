@@ -98,6 +98,8 @@ func EventRoutes(tokenAuth *jwtauth.JWTAuth) http.Handler {
 func RSORoutes() http.Handler {
 	router := chi.NewRouter()
 	router.Get("/", handlers.GetAllRSOs)
+	router.Get("/user", handlers.GetUserRSOs)
+	router.Put("/leave", handlers.LeaveRSO)
 	router.Post("/", handlers.CreateRSO)
 	router.Get("/{rsoId}", handlers.GetRSO)
 	router.Delete("/{rsoId}", handlers.DeleteRSO)
